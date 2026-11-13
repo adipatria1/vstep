@@ -2,316 +2,91 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Demo Binance Futures - VolStep Terminal</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
     <header class="app-header">
         <div class="header-brand">
             <a href="/" class="btn-back-home" title="Kembali ke Menu Utama">← Menu</a>
             <span class="logo-badge">PRO v2.0</span>
-            <h1>Demo Binance <span class="sub-title">Paper Trading Bot (Testnet Futures)</span></h1>
+            <h1>Demo Binance <span class="sub-title">Paper Bot</span></h1>
         </div>
         <div class="header-status">
-            <span id="bot-status-badge" class="badge badge-idle">Bot Stopped</span>
+            <span id="bot-status-badge" class="badge badge-idle">Stopped</span>
             <span id="conn-status-badge" class="badge badge-idle">Cek API...</span>
         </div>
     </header>
 
-    <div class="main-container">
-        <!-- Sidebar Controls & Setup -->
-        <aside class="sidebar-panel">
-            <!-- 1. Bot Controller Action Card -->
-            <div class="card form-section" style="padding: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <span style="font-weight: 700; font-size: 13px;">STATUS ENGINE</span>
-                    <span id="pulse-indicator" class="badge badge-idle">STANDBY</span>
+    <div class="main-container" style="max-width: 1000px; margin: 0 auto; padding: 12px;">
+        <!-- Hero Wallet Card (Binance Futures Mobile Style) -->
+        <div class="demo-hero-wallet">
+            <div class="dhw-top">
+                <div class="dhw-balance-box">
+                    <span class="dhw-lbl">SALDO DOMPET TESTNET</span>
+                    <span class="dhw-main-bal" id="val-wallet-bal">- USDT</span>
                 </div>
-
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <button type="button" id="btn-toggle-bot" class="btn btn-primary" style="padding: 12px; font-size: 14px; font-weight: 700;">
-                        ▶ START DEMO BOT
-                    </button>
-                    <button type="button" id="btn-panic-close" class="btn btn-secondary" style="background: rgba(242, 54, 69, 0.2); border-color: var(--bad-red); color: var(--bad-red);">
-                        ⚠️ PANIC CLOSE ALL
-                    </button>
+                <div style="text-align: right;">
+                    <span class="dhw-lbl">STATUS BOT</span>
+                    <div><span id="pulse-indicator" class="badge badge-idle">STANDBY</span></div>
                 </div>
             </div>
 
-            <!-- 2. Bot Configuration Form -->
-            <form id="bot-config-form">
-                <!-- Section 1: Line & Volatility Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>1. Line & Volatility Settings</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="line_mode">Line Mode</label>
-                            <select id="line_mode" name="line_mode">
-                                <option value="Anchor" selected>Anchor</option>
-                                <option value="Without Anchor">Without Anchor</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="volatility_type">Volatility Type</label>
-                            <select id="volatility_type" name="volatility_type">
-                                <option value="Stdev" selected>Stdev</option>
-                                <option value="Atr">Atr</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="volatility_length">Lookback Period</label>
-                            <input type="number" id="volatility_length" name="volatility_length" value="200" min="2">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="vol_mult">Multiplier</label>
-                            <input type="number" id="vol_mult" name="vol_mult" value="4.0" step="0.1" min="0.1">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="execution_mode">Mode Eksekusi Order</label>
-                        <select id="execution_mode" name="execution_mode">
-                            <option value="pre_close" selected>Pre-Close Sniping (1s Sebelum Candle Tutup)</option>
-                            <option value="realtime_no_lag">Realtime No Lag (Intrabar Langsung)</option>
-                            <option value="on_close">On Candle Close (Tepat Pergantian Bar)</option>
-                        </select>
-                        <small class="helper-text" id="exec-helper-text">Sniping order dieksekusi 1 detik sebelum candle ditutup (Anti-Repaint & Bebas Slippage).</small>
-                    </div>
-                    <div class="form-group" id="pre-close-buffer-group">
-                        <label for="pre_close_buffer_ms">Buffer Pre-Close (ms)</label>
-                        <input type="number" id="pre_close_buffer_ms" name="pre_close_buffer_ms" value="1000" min="100" max="10000" step="100">
-                        <small class="helper-text">1000 ms = Order dikirim pada menit 4:59 / 14:59 sebelum candle berakhir.</small>
-                    </div>
+            <div class="dhw-sub-metrics">
+                <div class="dhw-sub-box">
+                    <span class="dhw-lbl">EQUITY</span>
+                    <span class="dhw-sub-val" id="val-equity">- USDT</span>
                 </div>
-
-                <!-- Section 2: Mode Pemilihan Koin & Screener -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>2. Mode Pemilihan Koin</h3>
-                    </div>
-                    <div class="form-group">
-                        <label for="coin_mode">Mode Koin</label>
-                        <select id="coin_mode" name="coin_mode">
-                            <option value="top_gainers" selected>Auto-Screener: Top Gainers 24h</option>
-                            <option value="top_volume">Auto-Screener: Top Volume 24h</option>
-                            <option value="manual">Manual: 1 Koin Spesifik</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="manual-sym-group" style="display: none;">
-                        <label for="manual_symbol">Nama Koin</label>
-                        <input type="text" id="manual_symbol" name="manual_symbol" value="BTCUSDT" placeholder="Contoh: BTCUSDT">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="interval">Time Frame</label>
-                            <select id="interval" name="interval">
-                                <option value="1m">1m</option>
-                                <option value="3m">3m</option>
-                                <option value="5m">5m</option>
-                                <option value="15m" selected>15m</option>
-                                <option value="30m">30m</option>
-                                <option value="1h">1h</option>
-                                <option value="4h">4h</option>
-                                <option value="1d">1d</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="max_active_slots">Maks Slot Koin</label>
-                            <input type="number" id="max_active_slots" name="max_active_slots" value="5" min="1" max="10">
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-top: 6px;">
-                        <label for="warmup_klines">Data Warm-Up (Jumlah Kline/Candle)</label>
-                        <input type="number" id="warmup_klines" name="warmup_klines" value="10000" min="500" max="30000" step="500">
-                        <small class="helper-text">Default 10.000 candle (Mencakup ~3.5 bulan di 15m atau ~1 bulan di 5m untuk backtest statistik yang solid).</small>
-                    </div>
+                <div class="dhw-sub-box">
+                    <span class="dhw-lbl">FLOATING PNL</span>
+                    <span class="dhw-sub-val val-good" id="val-unrealized-pnl">- USDT</span>
                 </div>
-
-                <!-- Section 3: Strategy Finder Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>3. Strategy Finder Settings</h3>
-                    </div>
-                    <div class="form-group">
-                        <label for="strategy_mode">Target Juara Strategi</label>
-                        <select id="strategy_mode" name="strategy_mode">
-                            <option value="best_bar2" selected>Juara #1 Base Bar Murni (TP+SL Bar)</option>
-                            <option value="best_overall">Juara #1 Keseluruhan (ALL)</option>
-                            <option value="best_btp">Juara #1 Base Bar TP</option>
-                            <option value="best_bsl">Juara #1 Base Bar SL</option>
-                            <option value="best_fix">Juara #1 Base Persen Fixed</option>
-                            <option value="best_med">Juara #1 Base Persen Median</option>
-                            <option value="manual">Manual Pilihan Tetap</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="manual-strat-group" style="display: none;">
-                        <label for="manual_strategy_key">Kunci Strategi Manual</label>
-                        <input type="text" id="manual_strategy_key" name="manual_strategy_key" value="TREND | TP BarProf B1 | SL BarLoss S1">
-                    </div>
-                    <div class="form-group checkbox-row">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="inc_trend" name="inc_trend" checked>
-                            <span class="checkmark"></span> Trend
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="inc_counter" name="inc_counter" checked>
-                            <span class="checkmark"></span> Counter
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="inc_hedge" name="inc_hedge">
-                            <span class="checkmark"></span> Hedge
-                        </label>
-                    </div>
-                    <div class="form-group checkbox-row" style="margin-top: 6px;">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="inc_bar_tp" name="inc_bar_tp" checked>
-                            <span class="checkmark"></span> Sertakan TP Bar (BarFix/Prof/Dir)
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="inc_bar_sl" name="inc_bar_sl" checked>
-                            <span class="checkmark"></span> Sertakan SL Bar (BarLoss/Max/Adv)
-                        </label>
-                    </div>
-
-                    <!-- Param Fixed % -->
-                    <div class="form-row" style="margin-top: 6px;">
-                        <div class="form-group col-4">
-                            <label for="fixed1">Fixed 1 (%)</label>
-                            <input type="number" id="fixed1" name="fixed1" value="0.3" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed2">Fixed 2 (%)</label>
-                            <input type="number" id="fixed2" name="fixed2" value="0.6" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed3">Fixed 3 (%)</label>
-                            <input type="number" id="fixed3" name="fixed3" value="1.0" step="0.05" min="0.01">
-                        </div>
-                    </div>
-
-                    <!-- Param Bar TP -->
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="bar_tp1">TP Bar B1</label>
-                            <input type="number" id="bar_tp1" name="bar_tp1" value="3" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="bar_tp2">TP Bar B2</label>
-                            <input type="number" id="bar_tp2" name="bar_tp2" value="6" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="bar_tp_dir">Searah BD</label>
-                            <input type="number" id="bar_tp_dir" name="bar_tp_dir" value="3" min="1" max="20">
-                        </div>
-                    </div>
-
-                    <!-- Param Bar SL -->
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="sl_bar1">SL Bar S1</label>
-                            <input type="number" id="sl_bar1" name="sl_bar1" value="4" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="sl_bar2">SL Bar S2</label>
-                            <input type="number" id="sl_bar2" name="sl_bar2" value="8" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="sl_bar_adv">Lawan SA</label>
-                            <input type="number" id="sl_bar_adv" name="sl_bar_adv" value="3" min="1" max="20">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="min_levels">Min SR Selesai (M)</label>
-                            <input type="number" id="min_levels" name="min_levels" value="10" min="1">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="rank_by">Ranking By</label>
-                            <select id="rank_by" name="rank_by">
-                                <option value="Net / Max DD" selected>Net / Max DD</option>
-                                <option value="Net Profit %">Net Profit %</option>
-                                <option value="Profit Factor">Profit Factor</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="one_way_rule">Aturan 1 Posisi (One-Way)</label>
-                        <select id="one_way_rule" name="one_way_rule">
-                            <option value="Tutup Posisi Lama & Buka Baru di SR Baru" selected>Tutup Posisi Lama & Buka Baru di SR Baru</option>
-                            <option value="Reverse Jika Lawan Arah, Tahan Jika Searah">Reverse Jika Lawan Arah, Tahan Jika Searah</option>
-                            <option value="Tahan Posisi Lama (Skip SR Baru Jika Masih Open)">Tahan Posisi Lama (Skip SR Baru Jika Masih Open)</option>
-                        </select>
-                    </div>
+                <div class="dhw-sub-box">
+                    <span class="dhw-lbl">MARGIN RATIO</span>
+                    <span class="dhw-sub-val" id="val-margin-ratio">0.0%</span>
                 </div>
+            </div>
+        </div>
 
-                <!-- Section 4: Leverage & Alokasi Modal -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>4. Leverage & Alokasi Modal</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="leverage_mode">Mode Leverage</label>
-                            <select id="leverage_mode" name="leverage_mode">
-                                <option value="auto_max" selected>Auto Max Leverage</option>
-                                <option value="manual">Manual Leverage</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="manual_leverage">Leverage Manual (x)</label>
-                            <input type="number" id="manual_leverage" name="manual_leverage" value="10" min="1" max="125">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="margin_pct_per_slot">Margin per Slot Posisi (%)</label>
-                        <input type="number" id="margin_pct_per_slot" name="margin_pct_per_slot" value="4.0" step="0.5" min="0.5" max="50">
-                        <small class="helper-text">Contoh: 5 slot x 4% = 20% margin aktif, 80% saldo bebas cadangan.</small>
-                    </div>
-                </div>
-            </form>
-        </aside>
+        <!-- Engine Controller Actions -->
+        <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+            <button type="button" id="btn-toggle-bot" class="btn btn-primary" style="flex: 2; padding: 14px; font-size: 14px; font-weight: 800; border-radius: 8px;">
+                ▶ START DEMO BOT
+            </button>
+            <button type="button" id="btn-panic-close" class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 12px; font-weight: 700; border-radius: 8px; background: rgba(242, 54, 69, 0.15); border-color: var(--bad-red); color: var(--bad-red);">
+                ⚠️ PANIC CLOSE
+            </button>
+        </div>
 
-        <!-- Main Content Area -->
-        <main class="content-panel">
-            <!-- Live Wallet Overview -->
-            <div class="card summary-bar">
-                <div class="summary-item">
-                    <span class="lbl">Saldo Dompet</span>
-                    <span class="val" id="val-wallet-bal">- USDT</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Equity (Floating)</span>
-                    <span class="val" id="val-equity">- USDT</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Unrealized PnL</span>
-                    <span class="val" id="val-unrealized-pnl">- USDT</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Margin Ratio</span>
-                    <span class="val" id="val-margin-ratio">0.0%</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Pengaturan API</span>
-                    <a href="/settings" class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; margin-top: 4px;">⚙️ Ubah Kunci</a>
+        <!-- Segmented Mobile Tabs -->
+        <div class="mobile-segment-tabs">
+            <button type="button" class="seg-tab active" data-tab="tab-demo-positions">
+                💼 Posisi Aktif (<span id="pos-count-badge">0</span>)
+            </button>
+            <button type="button" class="seg-tab" data-tab="tab-demo-config">
+                ⚙️ Aturan & Parameter
+            </button>
+            <button type="button" class="seg-tab" data-tab="tab-demo-terminal">
+                📜 Terminal Aktivitas
+            </button>
+        </div>
+
+        <!-- TAB 1: POSISI AKTIF (MOBILE CARDS + TABLE) -->
+        <div id="tab-demo-positions" class="seg-content" style="display: block;">
+            <!-- Mobile Position Cards List -->
+            <div id="live-pos-cards" class="pos-cards-list">
+                <div style="text-align: center; padding: 36px 12px; color: var(--text-dim); background: #151924; border-radius: 10px; border: 1px solid var(--border-color);">
+                    Belum ada posisi terbuka saat ini.<br>
+                    <small>Bot akan otomatis membuka posisi begitu sinyal Pre-Close Sniper atau SR Cross muncul.</small>
                 </div>
             </div>
 
-            <!-- Live Open Positions Table -->
-            <div class="card table-card">
-                <div class="table-header-bar blue-header" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h2>POSISI AKTIF DI BINANCE TESTNET</h2>
-                    <span id="pos-count-badge" class="badge badge-active" style="font-size: 10px;">0 POSISI</span>
-                </div>
+            <!-- Table Fallback (for Desktop or detail view) -->
+            <div class="card table-card" style="margin-top: 14px;">
                 <div class="table-responsive">
                     <table class="pine-table" id="table-live-positions">
                         <thead>
@@ -335,23 +110,173 @@
                     </table>
                 </div>
             </div>
+        </div>
 
-            <!-- Live Terminal Activity Log (Hacker / Terminal Style) -->
+        <!-- TAB 2: PARAMETER & ATURAN BOT -->
+        <div id="tab-demo-config" class="seg-content" style="display: none;">
+            <form id="bot-config-form">
+                <!-- Section 1: Mode Koin & Eksekusi -->
+                <div class="card form-section" style="padding: 16px; margin-bottom: 12px;">
+                    <div class="section-header"><h3>1. Mode Koin & Eksekusi Sniper</h3></div>
+                    <div class="form-group">
+                        <label for="coin_mode">Mode Pemilihan Koin</label>
+                        <select id="coin_mode" name="coin_mode">
+                            <option value="auto_screener" selected>Auto Screener (Top Gainers / Volume)</option>
+                            <option value="manual">Manual Symbol Tertentu</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="manual-sym-group" style="display: none;">
+                        <label for="manual_symbols">Simbol Manual (Pisahkan Koma)</label>
+                        <input type="text" id="manual_symbols" name="manual_symbols" value="BTCUSDT,ETHUSDT,SOLUSDT">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="screener_source">Sumber Screener</label>
+                            <select id="screener_source" name="screener_source">
+                                <option value="top_gainers" selected>Top Gainers 24h</option>
+                                <option value="top_losers">Top Losers 24h</option>
+                                <option value="top_volume">Top Volume 24h</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="max_coins">Maksimal Koin</label>
+                            <input type="number" id="max_coins" name="max_coins" value="5" min="1" max="20">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="timeframe">Time Frame Koin</label>
+                        <select id="timeframe" name="timeframe">
+                            <option value="1m">1m</option>
+                            <option value="3m">3m</option>
+                            <option value="5m">5m</option>
+                            <option value="15m" selected>15m</option>
+                            <option value="30m">30m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h">4h</option>
+                            <option value="1d">1d</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="execution_mode">Mode Eksekusi Order</label>
+                        <select id="execution_mode" name="execution_mode">
+                            <option value="pre_close" selected>Pre-Close Sniping (1s Sebelum Candle Tutup)</option>
+                            <option value="realtime_no_lag">Realtime No Lag (Intrabar Langsung)</option>
+                            <option value="on_close">On Candle Close (Tepat Pergantian Bar)</option>
+                        </select>
+                        <small class="helper-text" id="exec-helper-text">Sniping order dieksekusi 1 detik sebelum candle ditutup (Anti-Repaint & Bebas Slippage).</small>
+                    </div>
+
+                    <div class="form-group" id="pre-close-buffer-group">
+                        <label for="pre_close_buffer_ms">Buffer Pre-Close (ms)</label>
+                        <input type="number" id="pre_close_buffer_ms" name="pre_close_buffer_ms" value="1000" min="100" max="10000" step="100">
+                    </div>
+                </div>
+
+                <!-- Section 2: Strategy Finder Preset -->
+                <div class="card form-section" style="padding: 16px; margin-bottom: 12px;">
+                    <div class="section-header"><h3>2. Strategy Finder Preset (105 Strategi)</h3></div>
+                    <div class="form-group">
+                        <label for="strategy_mode">Pilihan Strategi</label>
+                        <select id="strategy_mode" name="strategy_mode">
+                            <option value="auto_best" selected>Auto Pick Top #1 Sesuai Filter Backtest</option>
+                            <option value="manual">Manual Pilih Strategi Tertentu</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="manual-strat-group" style="display: none;">
+                        <label for="manual_strategy_key">Pilih Kunci Strategi</label>
+                        <select id="manual_strategy_key" name="manual_strategy_key">
+                            {% for key in strategy_keys %}
+                            <option value="{{ key }}">{{ key }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="strat_filter">Filter Kategori Strategi</label>
+                        <select id="strat_filter" name="strat_filter">
+                            <option value="Semua Strategi" selected>Semua Strategi</option>
+                            <option value="Base Bar (Semua TP / SL Bar)">Base Bar (Semua TP / SL Bar)</option>
+                            <option value="Base Bar Murni (TP Bar + SL Bar)">Base Bar Murni (TP Bar + SL Bar)</option>
+                            <option value="Base Bar - TP Saja">Base Bar - TP Saja</option>
+                            <option value="Base Bar - SL Saja">Base Bar - SL Saja</option>
+                            <option value="Base Persen (Semua Fixed % & Median %)">Base Persen (Semua Fixed % & Median %)</option>
+                            <option value="Base Persen Tetap (Fixed F1/F2/F3 %)">Base Persen Tetap (Fixed F1/F2/F3 %)</option>
+                            <option value="Base Persen Median (0.5M / 1M %)">Base Persen Median (0.5M / 1M %)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="rank_by">Ranking Leaderboard</label>
+                            <select id="rank_by" name="rank_by">
+                                <option value="Net / Max DD" selected>Net / Max DD</option>
+                                <option value="Net Profit %">Net Profit %</option>
+                                <option value="Profit Factor">Profit Factor</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="min_levels">Min SR Selesai (M)</label>
+                            <input type="number" id="min_levels" name="min_levels" value="10" min="1">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="one_way_rule">Aturan 1 Posisi (One-Way)</label>
+                        <select id="one_way_rule" name="one_way_rule">
+                            <option value="Tutup Posisi Lama & Buka Baru di SR Baru" selected>Tutup Posisi Lama & Buka Baru di SR Baru</option>
+                            <option value="Reverse Jika Lawan Arah, Tahan Jika Searah">Reverse Jika Lawan Arah, Tahan Jika Searah</option>
+                            <option value="Tahan Posisi Lama (Skip SR Baru Jika Masih Open)">Tahan Posisi Lama (Skip SR Baru Jika Masih Open)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Section 3: Leverage & Alokasi Modal -->
+                <div class="card form-section" style="padding: 16px;">
+                    <div class="section-header"><h3>3. Leverage & Alokasi Modal</h3></div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="leverage_mode">Mode Leverage</label>
+                            <select id="leverage_mode" name="leverage_mode">
+                                <option value="auto_max" selected>Auto Max Leverage</option>
+                                <option value="manual">Manual Leverage</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="manual_leverage">Leverage Manual (x)</label>
+                            <input type="number" id="manual_leverage" name="manual_leverage" value="10" min="1" max="125">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="margin_pct_per_slot">Margin per Slot Posisi (%)</label>
+                        <input type="number" id="margin_pct_per_slot" name="margin_pct_per_slot" value="4.0" step="0.5" min="0.5" max="50">
+                        <small class="helper-text">Contoh: 5 slot x 4% = 20% margin aktif, 80% saldo bebas cadangan.</small>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 3: LIVE TERMINAL ACTIVITY -->
+        <div id="tab-demo-terminal" class="seg-content" style="display: none;">
             <div class="card" style="background: #0d1117; border-color: #30363d; overflow: hidden; display: flex; flex-direction: column;">
-                <div style="background: #161b22; padding: 8px 14px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center;">
+                <div style="background: #161b22; padding: 10px 14px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="display: inline-block; width: 10px; height: 10px; background: #ff5f56; border-radius: 50%;"></span>
                         <span style="display: inline-block; width: 10px; height: 10px; background: #ffbd2e; border-radius: 50%;"></span>
                         <span style="display: inline-block; width: 10px; height: 10px; background: #27c93f; border-radius: 50%;"></span>
-                        <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #8b949e; margin-left: 6px;">TERMINAL AKTIVITAS BOT (WEBSOCKET + PRE-CLOSE SNIPER)</span>
+                        <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #8b949e; margin-left: 6px;">TERMINAL LOG (WEBSOCKET + PRE-CLOSE SNIPER)</span>
                     </div>
                     <button type="button" id="btn-clear-logs" class="btn btn-secondary" style="font-size: 10px; padding: 2px 8px;">Clear</button>
                 </div>
-                <div id="terminal-log-box" style="padding: 12px; height: 350px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #c9d1d9;">
+                <div id="terminal-log-box" style="padding: 12px; height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #c9d1d9;">
                     <div style="color: #8b949e;">[Menunggu aktivitas bot...]</div>
                 </div>
             </div>
-        </main>
+        </div>
     </div>
 
     <script>
@@ -366,9 +291,9 @@
             const valEquity = document.getElementById('val-equity');
             const valUnrealizedPnl = document.getElementById('val-unrealized-pnl');
             const valMarginRatio = document.getElementById('val-margin-ratio');
-
-            const livePosBody = document.getElementById('live-pos-body');
             const posCountBadge = document.getElementById('pos-count-badge');
+            const livePosCards = document.getElementById('live-pos-cards');
+            const livePosBody = document.getElementById('live-pos-body');
             const terminalLogBox = document.getElementById('terminal-log-box');
             const btnClearLogs = document.getElementById('btn-clear-logs');
 
@@ -379,6 +304,21 @@
             const executionMode = document.getElementById('execution_mode');
             const preCloseBufferGroup = document.getElementById('pre-close-buffer-group');
             const execHelperText = document.getElementById('exec-helper-text');
+
+            // Segmented Tabs
+            const segTabs = document.querySelectorAll('.seg-tab');
+            const segContents = document.querySelectorAll('.seg-content');
+
+            segTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    segTabs.forEach(t => t.classList.remove('active'));
+                    segContents.forEach(c => c.style.display = 'none');
+
+                    tab.classList.add('active');
+                    const target = document.getElementById(tab.dataset.tab);
+                    if (target) target.style.display = 'block';
+                });
+            });
 
             coinMode.addEventListener('change', () => {
                 manualSymGroup.style.display = (coinMode.value === 'manual') ? 'block' : 'none';
@@ -417,9 +357,9 @@
                             valWalletBal.textContent = `${data.balance.wallet_balance} USDT`;
                             valEquity.textContent = `${data.balance.equity} USDT`;
                             valUnrealizedPnl.textContent = `${data.balance.unrealized_pnl} USDT`;
-                            valUnrealizedPnl.className = (data.balance.unrealized_pnl >= 0) ? 'val val-good' : 'val val-bad';
+                            valUnrealizedPnl.className = (data.balance.unrealized_pnl >= 0) ? 'dhw-sub-val val-good' : 'dhw-sub-val val-bad';
                             valMarginRatio.textContent = `${data.balance.margin_ratio}%`;
-                            connStatusBadge.textContent = 'API Testnet OK';
+                            connStatusBadge.textContent = 'API Connected';
                             connStatusBadge.className = 'badge badge-online';
                         } else {
                             connStatusBadge.textContent = 'Kunci Belum Diisi';
@@ -462,171 +402,205 @@
             }
 
             function renderPositions(positions) {
-                posCountBadge.textContent = `${positions.length} POSISI`;
-                if (!positions || positions.length === 0) {
-                    livePosBody.innerHTML = `<tr><td colspan="9" class="text-center empty-cell">Tidak ada posisi terbuka saat ini</td></tr>`;
-                    return;
+                posCountBadge.textContent = `${positions.length}`;
+
+                // Mobile Cards View
+                if (livePosCards) {
+                    if (!positions || positions.length === 0) {
+                        livePosCards.innerHTML = `
+                            <div style="text-align: center; padding: 36px 12px; color: var(--text-dim); background: #151924; border-radius: 10px; border: 1px solid var(--border-color);">
+                                Belum ada posisi terbuka saat ini.<br>
+                                <small>Bot akan otomatis membuka posisi begitu sinyal Pre-Close Sniper atau SR Cross muncul.</small>
+                            </div>
+                        `;
+                    } else {
+                        livePosCards.innerHTML = '';
+                        positions.forEach(p => {
+                            const card = document.createElement('div');
+                            card.className = 'pos-card';
+
+                            const isLong = (p.side === 'BUY');
+                            const sideTag = isLong ? 'LONG' : 'SHORT';
+                            const sideClass = isLong ? 'pos-side-long' : 'pos-side-short';
+                            const pnlClass = (p.unrealized_profit >= 0) ? 'val-good' : 'val-bad';
+
+                            card.innerHTML = `
+                                <div class="pos-card-head">
+                                    <div class="pos-symbol-tag">
+                                        ${p.symbol}
+                                        <span class="pos-side-badge ${sideClass}">${sideTag} ${p.leverage}x</span>
+                                    </div>
+                                    <div class="pos-pnl-val ${pnlClass}">
+                                        ${p.unrealized_profit >= 0 ? '+' : ''}${p.unrealized_profit} USDT (${p.pnl_percent}%)
+                                    </div>
+                                </div>
+                                <div class="pos-card-grid">
+                                    <div><span style="color: var(--text-dim);">Entry Px:</span> <strong>${p.entry_price}</strong></div>
+                                    <div><span style="color: var(--text-dim);">Mark Px:</span> <strong>${p.mark_price}</strong></div>
+                                    <div><span style="color: var(--text-dim);">Jumlah:</span> <strong>${p.position_amt}</strong></div>
+                                    <div><span style="color: var(--text-dim);">Margin:</span> <strong>${p.margin_used} USDT</strong></div>
+                                </div>
+                                <button type="button" class="btn-close-pos btn-close-one" data-sym="${p.symbol}" data-side="${p.side}" data-qty="${p.position_amt}">
+                                    ✕ Tutup Posisi (Market Close)
+                                </button>
+                            `;
+                            livePosCards.appendChild(card);
+                        });
+                    }
                 }
 
-                livePosBody.innerHTML = '';
-                positions.forEach(p => {
-                    const tr = document.createElement('tr');
-                    const sideColor = (p.side === 'BUY') ? 'val-good' : 'val-bad';
-                    const pnlColor = (p.unrealized_profit >= 0) ? 'val-good' : 'val-bad';
+                // Table View Fallback
+                if (livePosBody) {
+                    if (!positions || positions.length === 0) {
+                        livePosBody.innerHTML = `<tr><td colspan="9" class="text-center empty-cell">Tidak ada posisi terbuka saat ini</td></tr>`;
+                    } else {
+                        livePosBody.innerHTML = '';
+                        positions.forEach(p => {
+                            const tr = document.createElement('tr');
+                            const sideColor = (p.side === 'BUY') ? 'val-good' : 'val-bad';
+                            const pnlColor = (p.unrealized_profit >= 0) ? 'val-good' : 'val-bad';
 
-                    tr.innerHTML = `
-                        <td class="font-bold val-highlight">${p.symbol}</td>
-                        <td class="${sideColor} font-bold">${p.side}</td>
-                        <td>${p.position_amt}</td>
-                        <td>${p.entry_price}</td>
-                        <td>${p.mark_price}</td>
-                        <td>${p.leverage}x</td>
-                        <td>${p.margin_used} USDT</td>
-                        <td class="${pnlColor}">${p.unrealized_profit} USDT (${p.pnl_percent}%)</td>
-                        <td>
-                            <button type="button" class="btn btn-secondary btn-close-one" data-sym="${p.symbol}" data-side="${p.side}" data-qty="${p.position_amt}" style="padding: 2px 6px; font-size: 11px;">
-                                Close
-                            </button>
-                        </td>
-                    `;
-                    livePosBody.appendChild(tr);
-                });
+                            tr.innerHTML = `
+                                <td class="font-bold val-highlight">${p.symbol}</td>
+                                <td class="${sideColor} font-bold">${p.side}</td>
+                                <td>${p.position_amt}</td>
+                                <td>${p.entry_price}</td>
+                                <td>${p.mark_price}</td>
+                                <td>${p.leverage}x</td>
+                                <td>${p.margin_used} USDT</td>
+                                <td class="${pnlColor}">${p.unrealized_profit} USDT (${p.pnl_percent}%)</td>
+                                <td>
+                                    <button type="button" class="btn btn-secondary btn-close-one" data-sym="${p.symbol}" data-side="${p.side}" data-qty="${p.position_amt}" style="padding: 2px 6px; font-size: 11px;">
+                                        Close
+                                    </button>
+                                </td>
+                            `;
+                            livePosBody.appendChild(tr);
+                        });
+                    }
+                }
 
+                // Bind close buttons
                 document.querySelectorAll('.btn-close-one').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const sym = e.target.dataset.sym;
                         const side = e.target.dataset.side;
                         const qty = parseFloat(e.target.dataset.qty);
-                        if (confirm(`Tutup posisi ${side} ${sym} sekarang?`)) {
-                            fetch('/api/demo/close_position', {
+                        if (confirm(`Tutup posisi ${side} ${sym} sekarang secara instan?`)) {
+                            fetch('/api/demo/manual_close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ symbol: sym, side: side, qty: qty })
+                                body: JSON.stringify({ symbol: sym, side: side, qty: Math.abs(qty) })
                             })
                             .then(res => res.json())
-                            .then(res => {
-                                alert(res.message);
-                                pollBotState();
+                            .then(data => {
+                                if (data.status === 'ok') {
+                                    alert(`Posisi ${sym} berhasil ditutup!`);
+                                    pollBotState();
+                                } else {
+                                    alert(`Gagal menutup: ${data.message}`);
+                                }
                             });
                         }
                     });
                 });
             }
 
+            let seenLogsCount = 0;
             function renderLogs(logs) {
                 if (!logs || logs.length === 0) return;
-                terminalLogBox.innerHTML = '';
-                logs.forEach(l => {
-                    const line = document.createElement('div');
-                    let col = '#c9d1d9';
-                    if (l.level === 'success') col = '#27c93f';
-                    else if (l.level === 'warning') col = '#ffbd2e';
-                    else if (l.level === 'error') col = '#ff5f56';
-                    else if (l.level === 'trade') col = '#00f2fe';
-                    else if (l.level === 'info') col = '#58a6ff';
-
-                    line.innerHTML = `<span style="color: #8b949e;">[${l.time}]</span> <span style="color: ${col};">${l.message}</span>`;
-                    terminalLogBox.appendChild(line);
-                });
-                terminalLogBox.scrollTop = terminalLogBox.scrollHeight;
+                if (logs.length !== seenLogsCount) {
+                    seenLogsCount = logs.length;
+                    terminalLogBox.innerHTML = '';
+                    logs.forEach(line => {
+                        const div = document.createElement('div');
+                        if (line.includes('[ENTRY]')) {
+                            div.style.color = 'var(--good-green)';
+                            div.style.fontWeight = '700';
+                        } else if (line.includes('[TP]') || line.includes('[CLOSE]')) {
+                            div.style.color = 'var(--highlight-gold)';
+                            div.style.fontWeight = '700';
+                        } else if (line.includes('[SL]') || line.includes('[ERROR]') || line.includes('[PANIC]')) {
+                            div.style.color = 'var(--bad-red)';
+                            div.style.fontWeight = '700';
+                        } else if (line.includes('[SNIPER]')) {
+                            div.style.color = '#58a6ff';
+                        } else {
+                            div.style.color = '#c9d1d9';
+                        }
+                        div.textContent = line;
+                        terminalLogBox.appendChild(div);
+                    });
+                    terminalLogBox.scrollTop = terminalLogBox.scrollHeight;
+                }
             }
 
-            // Start / Stop Bot Handler
+            // Toggle Bot Start / Stop
             btnToggleBot.addEventListener('click', () => {
                 if (!isRunning) {
-                    // Start bot with complete parameters
-                    const payload = {
+                    // Start Bot
+                    const cfg = {
                         is_running: true,
-                        line_mode: document.getElementById('line_mode').value,
-                        volatility_type: document.getElementById('volatility_type').value,
-                        volatility_length: parseInt(document.getElementById('volatility_length').value, 10),
-                        vol_mult: parseFloat(document.getElementById('vol_mult').value),
-                        execution_mode: document.getElementById('execution_mode').value,
-                        pre_close_buffer_ms: parseInt(document.getElementById('pre_close_buffer_ms').value, 10),
-
                         coin_mode: coinMode.value,
-                        manual_symbol: document.getElementById('manual_symbol').value.trim().toUpperCase(),
-                        interval: document.getElementById('interval').value,
-                        max_active_slots: parseInt(document.getElementById('max_active_slots').value, 10),
-                        warmup_klines: parseInt(document.getElementById('warmup_klines').value, 10) || 10000,
-
+                        manual_symbols: document.getElementById('manual_symbols').value.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0),
+                        screener_source: document.getElementById('screener_source').value,
+                        max_coins: parseInt(document.getElementById('max_coins').value, 10),
+                        timeframe: document.getElementById('timeframe').value,
+                        line_mode: "Anchor",
+                        volatility_type: "Stdev",
+                        volatility_length: 200,
+                        vol_mult: 4.0,
                         strategy_mode: strategyMode.value,
-                        manual_strategy_key: document.getElementById('manual_strategy_key').value.trim(),
-                        inc_trend: document.getElementById('inc_trend').checked,
-                        inc_counter: document.getElementById('inc_counter').checked,
-                        inc_hedge: document.getElementById('inc_hedge').checked,
-                        inc_bar_tp: document.getElementById('inc_bar_tp').checked,
-                        inc_bar_sl: document.getElementById('inc_bar_sl').checked,
-                        fixed1: parseFloat(document.getElementById('fixed1').value),
-                        fixed2: parseFloat(document.getElementById('fixed2').value),
-                        fixed3: parseFloat(document.getElementById('fixed3').value),
-                        bar_tp1: parseInt(document.getElementById('bar_tp1').value, 10),
-                        bar_tp2: parseInt(document.getElementById('bar_tp2').value, 10),
-                        bar_tp_dir: parseInt(document.getElementById('bar_tp_dir').value, 10),
-                        sl_bar1: parseInt(document.getElementById('sl_bar1').value, 10),
-                        sl_bar2: parseInt(document.getElementById('sl_bar2').value, 10),
-                        sl_bar_adv: parseInt(document.getElementById('sl_bar_adv').value, 10),
-                        min_levels: parseInt(document.getElementById('min_levels').value, 10),
+                        manual_strategy_key: document.getElementById('manual_strategy_key').value,
+                        strat_filter: document.getElementById('strat_filter').value,
                         rank_by: document.getElementById('rank_by').value,
+                        min_levels: parseInt(document.getElementById('min_levels').value, 10),
                         one_way_rule: document.getElementById('one_way_rule').value,
-
                         leverage_mode: document.getElementById('leverage_mode').value,
                         manual_leverage: parseInt(document.getElementById('manual_leverage').value, 10),
                         margin_pct_per_slot: parseFloat(document.getElementById('margin_pct_per_slot').value),
+                        execution_mode: executionMode.value,
+                        pre_close_buffer_ms: parseInt(document.getElementById('pre_close_buffer_ms').value, 10)
                     };
 
-                    btnToggleBot.disabled = true;
                     fetch('/api/demo/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(cfg)
                     })
                     .then(res => res.json())
                     .then(data => {
-                        btnToggleBot.disabled = false;
                         if (data.status === 'ok') {
                             pollBotState();
                         } else {
-                            alert(data.message);
+                            alert('Gagal menyalakan bot: ' + data.message);
                         }
-                    })
-                    .catch(err => {
-                        btnToggleBot.disabled = false;
-                        alert('Error: ' + err.message);
                     });
                 } else {
-                    // Stop bot
-                    btnToggleBot.disabled = true;
+                    // Stop Bot
                     fetch('/api/demo/stop', { method: 'POST' })
-                        .then(res => res.json())
-                        .then(() => {
-                            btnToggleBot.disabled = false;
-                            pollBotState();
-                        });
+                    .then(res => res.json())
+                    .then(data => {
+                        pollBotState();
+                    });
                 }
             });
 
             // Panic Close All
             btnPanicClose.addEventListener('click', () => {
-                if (confirm('PERINGATAN: Apakah Anda yakin ingin menutup paksa SELURUH posisi terbuka di Binance Testnet sekarang?')) {
-                    btnPanicClose.disabled = true;
+                if (confirm('PERINGATAN: Tutup SEMUA posisi aktif sekarang juga dengan Market Order?')) {
                     fetch('/api/demo/panic_close', { method: 'POST' })
-                        .then(res => res.json())
-                        .then(data => {
-                            btnPanicClose.disabled = false;
-                            alert(data.message);
-                            pollBotState();
-                        })
-                        .catch(err => {
-                            btnPanicClose.disabled = false;
-                            alert('Error: ' + err.message);
-                        });
+                    .then(res => res.json())
+                    .then(data => {
+                        alert(data.message);
+                        pollBotState();
+                    });
                 }
             });
 
-            // Initial poll and recurring poll every 3 seconds
+            // Start polling loop (every 1.5 seconds)
             pollBotState();
-            setInterval(pollBotState, 3000);
+            setInterval(pollBotState, 1500);
         });
     </script>
 </body>

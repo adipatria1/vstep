@@ -19,8 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ldTitle = document.getElementById('ld-title');
     const ldBody = document.getElementById('ld-body');
+    const ldCards = document.getElementById('ld-cards');
     const dtTitle = document.getElementById('dt-title');
     const dtBody = document.getElementById('dt-body');
+    const dtCardsGrid = document.getElementById('dt-cards-grid');
+
+    const catWinnersWrap = document.getElementById('cat-winners-wrap');
+    const catWinnersGrid = document.getElementById('cat-winners-grid');
 
     const auxContainer = document.getElementById('aux-container');
     const tradesBody = document.getElementById('trades-body');
@@ -30,6 +35,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentEventSource = null;
     let lastResult = null;
+
+    // ==========================================
+    // 1. MOBILE CHIPS INTERACTION
+    // ==========================================
+    // Coin Chips
+    document.querySelectorAll('#coin-chips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('#coin-chips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            document.getElementById('symbol').value = chip.dataset.sym;
+            checkCache();
+        });
+    });
+
+    // Timeframe Chips
+    document.querySelectorAll('#tf-chips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('#tf-chips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            document.getElementById('interval').value = chip.dataset.tf;
+            checkCache();
+        });
+    });
+
+    // Days Chips
+    document.querySelectorAll('#days-chips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('#days-chips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            document.getElementById('days').value = chip.dataset.days;
+            checkCache();
+        });
+    });
+
+    // Sync input typing to chips
+    document.getElementById('symbol').addEventListener('input', () => {
+        const val = document.getElementById('symbol').value.trim().toUpperCase();
+        document.querySelectorAll('#coin-chips .chip').forEach(c => {
+            c.classList.toggle('active', c.dataset.sym === val);
+        });
+        checkCache();
+    });
+
+    document.getElementById('interval').addEventListener('change', () => {
+        const val = document.getElementById('interval').value;
+        document.querySelectorAll('#tf-chips .chip').forEach(c => {
+            c.classList.toggle('active', c.dataset.tf === val);
+        });
+        checkCache();
+    });
+
+    document.getElementById('days').addEventListener('input', () => {
+        const val = document.getElementById('days').value;
+        document.querySelectorAll('#days-chips .chip').forEach(c => {
+            c.classList.toggle('active', c.dataset.days === val);
+        });
+        checkCache();
+    });
+
+    // ==========================================
+    // 2. SEGMENTED MOBILE TABS
+    // ==========================================
+    const segTabs = document.querySelectorAll('.seg-tab');
+    const segContents = document.querySelectorAll('.seg-content');
+
+    function switchSegmentTab(targetId) {
+        segTabs.forEach(t => t.classList.toggle('active', t.dataset.tab === targetId));
+        segContents.forEach(c => {
+            c.style.display = (c.id === targetId) ? 'block' : 'none';
+        });
+    }
+
+    segTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            switchSegmentTab(tab.dataset.tab);
+        });
+    });
+
+    // Back to Leaderboard button in Detail view
+    const btnBackToLd = document.getElementById('btn-back-to-ld');
+    if (btnBackToLd) {
+        btnBackToLd.addEventListener('click', () => {
+            switchSegmentTab('tab-leaderboard');
+        });
+    }
+
+    // View Mode Toggle (Kartu vs Tabel)
+    const btnViewCards = document.getElementById('btn-view-cards');
+    const btnViewTable = document.getElementById('btn-view-table');
+    const ldTableContainer = document.getElementById('ld-table-container');
+
+    if (btnViewCards && btnViewTable) {
+        btnViewCards.addEventListener('click', () => {
+            btnViewCards.classList.add('active');
+            btnViewTable.classList.remove('active');
+            if (ldCards) ldCards.style.display = 'flex';
+            if (ldTableContainer) ldTableContainer.style.display = 'none';
+        });
+
+        btnViewTable.addEventListener('click', () => {
+            btnViewTable.classList.add('active');
+            btnViewCards.classList.remove('active');
+            if (ldCards) ldCards.style.display = 'none';
+            if (ldTableContainer) ldTableContainer.style.display = 'block';
+        });
+    }
 
     // Check cache on input change
     function checkCache() {
@@ -43,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
                 if (data.cached) {
-                    cacheIndicator.textContent = `✓ Ada di disk cache (${data.size_kb} KB) - siap kalkulasi instan.`;
+                    cacheIndicator.textContent = `✓ Ada di disk cache (${data.size_kb} KB) - siap simulasi instan.`;
                     cacheIndicator.style.color = 'var(--good-green)';
                 } else {
                     cacheIndicator.textContent = `ℹ Belum ada cache - akan di-fetch dari Binance FAPI.`;
@@ -55,12 +166,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     }
 
-    document.getElementById('symbol').addEventListener('input', checkCache);
-    document.getElementById('interval').addEventListener('change', checkCache);
-    document.getElementById('days').addEventListener('input', checkCache);
     checkCache();
 
-    // Tab buttons
+    // Tab buttons for Aux Trades / Positions
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -78,7 +186,6 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const [key, val] of formData.entries()) {
             params.append(key, val);
         }
-        // Handle unchecked checkboxes
         const checkFields = ['force_fetch', 'realtimeUpdate', 'incTrend', 'incCounter', 'incHedge', 'incBarTp', 'incBarSl'];
         checkFields.forEach(chk => {
             const el = document.getElementById(chk);
@@ -91,7 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return params;
     }
 
-    // Helper: Form data to JSON object
     function getFormJSON() {
         const params = getFormData();
         const obj = {};
@@ -113,39 +219,46 @@ document.addEventListener('DOMContentLoaded', () => {
         return obj;
     }
 
-    // Run Backtest via SSE
+    // Run Full Simulation with SSE Streaming
     btnRun.addEventListener('click', () => {
-        if (currentEventSource) {
-            currentEventSource.close();
-            currentEventSource = null;
+        const symbol = document.getElementById('symbol').value.trim().toUpperCase();
+        if (!symbol) {
+            alert('Silakan masukkan nama koin/symbol!');
+            return;
         }
 
-        const params = getFormData();
-        const url = `/api/stream_backtest?${params.toString()}`;
+        if (currentEventSource) {
+            currentEventSource.close();
+        }
 
         btnRun.disabled = true;
         btnRecalc.disabled = true;
         progressContainer.style.display = 'block';
         milestoneAlert.style.display = 'none';
-        progressLabel.textContent = 'Menghubungkan ke Binance Futures API...';
+        progressLabel.textContent = 'Menghubungi Binance Futures API...';
         progressPercent.textContent = '0%';
         progressBar.style.width = '0%';
+        progressBar.style.backgroundColor = 'var(--primary-blue)';
 
-        currentEventSource = new EventSource(url);
+        // Switch to leaderboard tab
+        switchSegmentTab('tab-leaderboard');
+
+        const params = getFormData();
+        const sseUrl = `/api/stream_backtest?${params.toString()}`;
+
+        currentEventSource = new EventSource(sseUrl);
 
         currentEventSource.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'progress') {
-                    const info = msg.data;
-                    progressLabel.textContent = info.message || 'Mengambil data...';
-                    if (info.percent !== undefined) {
-                        progressPercent.textContent = `${info.percent}%`;
-                        progressBar.style.width = `${info.percent}%`;
-                    }
-                    if (info.status === 'milestone_pause') {
+                    progressLabel.textContent = msg.message;
+                    progressPercent.textContent = `${msg.percent.toFixed(1)}%`;
+                    progressBar.style.width = `${msg.percent}%`;
+
+                    if (msg.status === 'milestone_wait') {
                         milestoneAlert.style.display = 'flex';
-                        milestoneText.textContent = info.message;
+                        milestoneText.textContent = `Batas kelipatan 360 hari tercapai. Jeda jeda API Binance tersisa ${msg.pause_left || 60}s...`;
                     } else {
                         milestoneAlert.style.display = 'none';
                     }
@@ -241,31 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (lastResult) btnRecalc.click();
     });
 
-    document.getElementById('tableMode').addEventListener('change', () => {
-        updateTableVisibility();
-    });
-
-    function updateTableVisibility() {
-        const mode = document.getElementById('tableMode').value;
-        const ldContainer = document.getElementById('leaderboard-container');
-        const dtContainer = document.getElementById('detail-container');
-
-        if (mode === 'Keduanya (Top + Detail)') {
-            ldContainer.style.display = 'block';
-            dtContainer.style.display = 'block';
-            document.querySelector('.tables-grid').style.gridTemplateColumns = '1.5fr 1fr';
-        } else if (mode === 'Top Strategy (Leaderboard Saja)') {
-            ldContainer.style.display = 'block';
-            dtContainer.style.display = 'none';
-            document.querySelector('.tables-grid').style.gridTemplateColumns = '1fr';
-        } else if (mode === 'Detail Strategy (Detail Saja)') {
-            ldContainer.style.display = 'none';
-            dtContainer.style.display = 'block';
-            document.querySelector('.tables-grid').style.gridTemplateColumns = '1fr';
-        }
-    }
-
-    // Render Full Results
+    // ==========================================
+    // 3. RENDER RESULTS (CARDS + TABLES)
+    // ==========================================
     function renderResults(result) {
         if (!result) return;
 
@@ -281,22 +372,98 @@ document.addEventListener('DOMContentLoaded', () => {
         dataStatus.textContent = `${symbol} (${summary.candles_count} candles)`;
         dataStatus.className = 'badge badge-active';
 
-        // 2. Leaderboard Table
         const ld = result.leaderboard;
-        ldTitle.textContent = ld.title;
-        ldBody.innerHTML = '';
+        ldTitle.textContent = `${ld.title}`;
 
-        // Render Top N rows
+        // 2. Render Category Winners Carousel / Grid
+        if (ld.category_winners && ld.category_winners.length > 0) {
+            catWinnersWrap.style.display = 'block';
+            catWinnersGrid.innerHTML = '';
+
+            ld.category_winners.forEach(w => {
+                const card = document.createElement('div');
+                card.className = 'cat-winner-card';
+                const netClass = (w.net_pct >= 0) ? 'val-good' : 'val-bad';
+
+                card.innerHTML = `
+                    <span class="cat-winner-tag cwt-${w.color_code}">${w.label}</span>
+                    <div class="cat-winner-name" title="${w.name}">${w.name}</div>
+                    <div class="cat-winner-profit ${netClass}">${w.net_pct_str}</div>
+                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">Win: ${w.win_pct} • PF: ${w.pf_str}</div>
+                `;
+
+                card.addEventListener('click', () => {
+                    document.getElementById('selStrategy').value = w.key;
+                    btnRecalc.click();
+                    switchSegmentTab('tab-detail');
+                });
+
+                catWinnersGrid.appendChild(card);
+            });
+        }
+
+        // 3. Render Mobile Strategy Cards (Default for Mobile)
+        if (ldCards) {
+            ldCards.innerHTML = '';
+            ld.rows.forEach(r => {
+                const card = document.createElement('div');
+                card.className = `strat-mobile-card ${r.is_selected ? 'selected-card' : ''}`;
+
+                let rankBadge = `#${r.rank}`;
+                if (r.rank === 1) rankBadge = '🥇 #1';
+                else if (r.rank === 2) rankBadge = '🥈 #2';
+                else if (r.rank === 3) rankBadge = '🥉 #3';
+
+                const netClass = (r.net_pct >= 0) ? 'val-good' : 'val-bad';
+                const pfClass = (r.pf >= 1.0) ? 'val-good' : 'val-bad';
+                const liqClass = (r.liq === 'YA') ? 'val-bad' : 'val-dim';
+
+                card.innerHTML = `
+                    <div class="smc-header">
+                        <span class="smc-rank">${rankBadge}</span>
+                        <span class="smc-title ${r.is_selected ? 'val-highlight font-bold' : ''}">${r.name}</span>
+                        <span class="smc-win-badge">${r.win_pct} Win</span>
+                    </div>
+                    <div class="smc-grid">
+                        <div class="smc-col">
+                            <span class="smc-lbl">NET PROFIT</span>
+                            <span class="smc-val large ${netClass}">${r.net_pct_str}</span>
+                        </div>
+                        <div class="smc-col">
+                            <span class="smc-lbl">MAX DD (EQ/BAL)</span>
+                            <span class="smc-val val-bad">${r.dd_eq_str} / ${r.dd_bal_str}</span>
+                        </div>
+                        <div class="smc-col">
+                            <span class="smc-lbl">PROFIT FACTOR</span>
+                            <span class="smc-val ${pfClass}">${r.pf_str}</span>
+                        </div>
+                    </div>
+                    <div class="smc-footer">
+                        <span>Trades: <strong style="color: #fff;">${r.trades}</strong> • Liq: <span class="${liqClass}">${r.liq}</span></span>
+                        <span style="color: var(--primary-blue); font-weight: 700;">Ketuk untuk detail metrik ➔</span>
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    document.getElementById('selStrategy').value = r.key;
+                    btnRecalc.click();
+                    switchSegmentTab('tab-detail');
+                });
+
+                ldCards.appendChild(card);
+            });
+        }
+
+        // 4. Render Leaderboard Table (Spreadsheet View)
+        ldBody.innerHTML = '';
         ld.rows.forEach(r => {
             const tr = document.createElement('tr');
-            if (r.is_selected) {
-                tr.classList.add('selected-row');
-            }
+            if (r.is_selected) tr.classList.add('selected-row');
 
-            // Click to select row & update detail table
             tr.addEventListener('click', () => {
                 document.getElementById('selStrategy').value = r.key;
                 btnRecalc.click();
+                switchSegmentTab('tab-detail');
             });
 
             const netClass = (r.net_pct >= 0) ? 'val-good' : 'val-bad';
@@ -305,17 +472,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const pfClass = (r.pf >= 1.0) ? 'val-good' : 'val-bad';
             const liqClass = (r.liq === 'YA') ? 'val-bad' : 'val-dim';
 
-            let nameColClass = 'val-neutral';
-            if (r.is_selected) nameColClass = 'val-highlight font-bold';
-            else if (r.badge === 'bar2') nameColClass = 'val-bar2';
-            else if (r.badge === 'btp') nameColClass = 'val-btp';
-            else if (r.badge === 'bsl') nameColClass = 'val-bsl';
-            else if (r.badge === 'fix') nameColClass = 'val-fix';
-            else if (r.badge === 'med') nameColClass = 'val-med';
-
             tr.innerHTML = `
-                <td class="text-center ${r.is_selected ? 'val-highlight font-bold' : nameColClass}">${r.rank}</td>
-                <td class="text-left ${nameColClass}">${r.name}</td>
+                <td class="text-center ${r.is_selected ? 'val-highlight font-bold' : ''}">${r.rank}</td>
+                <td class="text-left ${r.is_selected ? 'val-highlight font-bold' : ''}">${r.name}</td>
                 <td class="text-right ${netClass}">${r.net_pct_str}</td>
                 <td class="text-right ${ddEqClass}">${r.dd_eq_str}</td>
                 <td class="text-right ${ddBalClass}">${r.dd_bal_str}</td>
@@ -327,55 +486,59 @@ document.addEventListener('DOMContentLoaded', () => {
             ldBody.appendChild(tr);
         });
 
-        // Render 6 Category Winners comparison rows
-        if (ld.category_winners && ld.category_winners.length > 0) {
-            // Header Row
-            const sumHeadTr = document.createElement('tr');
-            sumHeadTr.className = 'cat-summary-header';
-            sumHeadTr.innerHTML = `
-                <td colspan="9" class="text-center">
-                    🏆 PEMENANG TERBAIK: BASE BAR (TP+SL / TP / SL) vs BASE PERSEN (FIXED % / MEDIAN %)
-                </td>
-            `;
-            ldBody.appendChild(sumHeadTr);
+        // 5. Render Detail Strategy (Cards + Table)
+        const dt = result.detail;
+        dtTitle.textContent = dt.title;
 
-            // Winner Rows
-            ld.category_winners.forEach(w => {
-                const wTr = document.createElement('tr');
-                wTr.className = 'cat-winner-row';
+        // Render Metric Cards
+        if (dtCardsGrid && dt.rows) {
+            dtCardsGrid.innerHTML = '';
 
-                wTr.addEventListener('click', () => {
-                    document.getElementById('selStrategy').value = w.key;
-                    btnRecalc.click();
+            // Group 1: Performa Bersih
+            const perfRows = dt.rows.filter(r => r.key.includes('Net') || r.key.includes('Modal') || r.key.includes('Balance'));
+            // Group 2: Risiko & Drawdown
+            const riskRows = dt.rows.filter(r => r.key.includes('Drawdown') || r.key.includes('Margin') || r.key.includes('Liq'));
+            // Group 3: Statistik Trade
+            const tradeRows = dt.rows.filter(r => r.key.includes('Trade') || r.key.includes('Win Rate') || r.key.includes('Profit Factor'));
+            // Group 4: Analisis Lainnya
+            const otherRows = dt.rows.filter(r => !perfRows.includes(r) && !riskRows.includes(r) && !tradeRows.includes(r));
+
+            const groups = [
+                { title: '📈 Performa Modal & Profit', rows: perfRows },
+                { title: '🛡️ Risiko & Drawdown', rows: riskRows },
+                { title: '🎯 Statistik Win / Loss', rows: tradeRows },
+                { title: '📊 Metrik Tambahan', rows: otherRows }
+            ];
+
+            groups.forEach(g => {
+                if (g.rows.length === 0) return;
+                const card = document.createElement('div');
+                card.className = 'detail-metric-card';
+                let rowsHtml = '';
+                g.rows.forEach(row => {
+                    let valClass = 'val-neutral';
+                    if (row.color === 'good') valClass = 'val-good';
+                    else if (row.color === 'bad') valClass = 'val-bad';
+                    else if (row.color === 'highlight') valClass = 'val-highlight';
+
+                    rowsHtml += `
+                        <div class="dmc-row">
+                            <span class="dmc-label">${row.key}</span>
+                            <span class="dmc-value ${valClass}">${row.val}</span>
+                        </div>
+                    `;
                 });
 
-                const netClass = (w.net_pct >= 0) ? 'val-good' : 'val-bad';
-                const ddEqClass = (w.dd_eq > 0) ? 'val-bad' : 'val-neutral';
-                const ddBalClass = (w.dd_bal > 0) ? 'val-bad' : 'val-neutral';
-                const pfClass = (w.pf >= 1.0) ? 'val-good' : 'val-bad';
-                const liqClass = (w.liq === 'YA') ? 'val-bad' : 'val-dim';
-                const colClass = `val-${w.color_code}`;
-
-                wTr.innerHTML = `
-                    <td class="text-center ${colClass} font-bold">${w.category_code}</td>
-                    <td class="text-left ${colClass}"><span class="cat-badge cat-badge-${w.color_code}">${w.label}</span> ${w.name}</td>
-                    <td class="text-right ${netClass}">${w.net_pct_str}</td>
-                    <td class="text-right ${ddEqClass}">${w.dd_eq_str}</td>
-                    <td class="text-right ${ddBalClass}">${w.dd_bal_str}</td>
-                    <td class="text-right val-neutral">${w.win_pct}</td>
-                    <td class="text-right val-neutral">${w.trades}</td>
-                    <td class="text-right ${pfClass}">${w.pf_str}</td>
-                    <td class="text-center ${liqClass}">${w.liq}</td>
+                card.innerHTML = `
+                    <div class="dmc-title">${g.title}</div>
+                    ${rowsHtml}
                 `;
-                ldBody.appendChild(wTr);
+                dtCardsGrid.appendChild(card);
             });
         }
 
-        // 3. Detail Table
-        const dt = result.detail;
-        dtTitle.textContent = dt.title;
+        // Render Detail Table Fallback
         dtBody.innerHTML = '';
-
         dt.rows.forEach(row => {
             const tr = document.createElement('tr');
             let valClass = 'val-neutral';
@@ -390,10 +553,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dtBody.appendChild(tr);
         });
 
-        // 4. Aux Tables (Closed Trades & Open Positions)
-        auxContainer.style.display = 'block';
+        // 6. Render Trades & Positions
         tradesBody.innerHTML = '';
+        const tradesCount = document.getElementById('trades-count');
         if (dt.recent_trades && dt.recent_trades.length > 0) {
+            if (tradesCount) tradesCount.textContent = dt.recent_trades.length;
             dt.recent_trades.forEach(t => {
                 const tr = document.createElement('tr');
                 const sideColor = (t.side === 'BUY') ? 'val-good' : 'val-bad';
@@ -413,11 +577,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 tradesBody.appendChild(tr);
             });
         } else {
+            if (tradesCount) tradesCount.textContent = '0';
             tradesBody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">Belum ada trade yang ditutup</td></tr>`;
         }
 
         positionsBody.innerHTML = '';
+        const positionsCount = document.getElementById('positions-count');
         if (dt.open_positions && dt.open_positions.length > 0) {
+            if (positionsCount) positionsCount.textContent = dt.open_positions.length;
             dt.open_positions.forEach(p => {
                 const tr = document.createElement('tr');
                 const sideColor = (p.side === 'BUY') ? 'val-good' : 'val-bad';
@@ -437,9 +604,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 positionsBody.appendChild(tr);
             });
         } else {
+            if (positionsCount) positionsCount.textContent = '0';
             positionsBody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">Tidak ada posisi yang sedang terbuka</td></tr>`;
         }
-
-        updateTableVisibility();
     }
 });

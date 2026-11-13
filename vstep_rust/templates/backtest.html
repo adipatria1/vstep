@@ -2,40 +2,63 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VolStep Strategy Finder - Binance Futures Cross Margin</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
     <header class="app-header">
         <div class="header-brand">
             <a href="/" class="btn-back-home" title="Kembali ke Menu Utama">← Menu</a>
             <span class="logo-badge">PRO v2.0</span>
-            <h1>VolStep Finder <span class="sub-title">Binance Futures (Cross Margin | 105 Strategi)</span></h1>
+            <h1>VolStep Finder <span class="sub-title">105 Strategi</span></h1>
         </div>
         <div class="header-status">
-            <span id="backend-status" class="badge badge-online">System Ready</span>
-            <span id="data-status" class="badge badge-idle">No Data Loaded</span>
+            <span id="backend-status" class="badge badge-online">Ready</span>
+            <span id="data-status" class="badge badge-idle">No Data</span>
         </div>
     </header>
 
     <div class="main-container">
-        <!-- Sidebar Controls -->
+        <!-- Control Panel (Mobile-First Card) -->
         <aside class="sidebar-panel">
             <form id="backtest-form">
-                <!-- Section 1: Data & Fetch -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>1. Fetch Binance Futures (FAPI)</h3>
+                <!-- Quick Setup Card -->
+                <div class="card form-section" style="padding: 16px;">
+                    <!-- Symbol Chips -->
+                    <div class="quick-chips-group">
+                        <label class="quick-chips-label">PILIH COIN CEPAT</label>
+                        <div class="quick-chips" id="coin-chips">
+                            <button type="button" class="chip active" data-sym="BTCUSDT">BTC</button>
+                            <button type="button" class="chip" data-sym="ETHUSDT">ETH</button>
+                            <button type="button" class="chip" data-sym="SOLUSDT">SOL</button>
+                            <button type="button" class="chip" data-sym="BNBUSDT">BNB</button>
+                            <button type="button" class="chip" data-sym="DOGEUSDT">DOGE</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="symbol">Nama Coin / Pair</label>
-                        <input type="text" id="symbol" name="symbol" value="BTCUSDT" placeholder="Contoh: BTCUSDT, ETHUSDT" required>
+
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label for="symbol">Symbol / Pair</label>
+                        <input type="text" id="symbol" name="symbol" value="BTCUSDT" placeholder="Contoh: BTCUSDT, ETHUSDT" style="font-family: var(--font-mono); font-weight: 700;" required>
                     </div>
-                    <div class="form-row">
+
+                    <!-- Timeframe Chips -->
+                    <div class="quick-chips-group" style="margin-top: 10px;">
+                        <label class="quick-chips-label">TIME FRAME CEPAT</label>
+                        <div class="quick-chips" id="tf-chips">
+                            <button type="button" class="chip" data-tf="1m">1m</button>
+                            <button type="button" class="chip" data-tf="5m">5m</button>
+                            <button type="button" class="chip" data-tf="15m">15m</button>
+                            <button type="button" class="chip active" data-tf="1h">1h</button>
+                            <button type="button" class="chip" data-tf="4h">4h</button>
+                            <button type="button" class="chip" data-tf="1d">1d</button>
+                        </div>
+                    </div>
+
+                    <div class="form-row" style="margin-top: 8px;">
                         <div class="form-group col-6">
                             <label for="interval">Time Frame</label>
                             <select id="interval" name="interval">
@@ -61,7 +84,16 @@
                             <input type="number" id="days" name="days" value="7" min="1" max="2500" required>
                         </div>
                     </div>
-                    <div class="form-group checkbox-group">
+
+                    <!-- Quick Days Chips -->
+                    <div class="quick-chips" id="days-chips" style="margin-top: 6px;">
+                        <button type="button" class="chip active" data-days="7">7 Hari</button>
+                        <button type="button" class="chip" data-days="30">30 Hari</button>
+                        <button type="button" class="chip" data-days="60">60 Hari</button>
+                        <button type="button" class="chip" data-days="90">90 Hari</button>
+                    </div>
+
+                    <div class="form-group checkbox-group" style="margin-top: 12px;">
                         <label class="custom-checkbox">
                             <input type="checkbox" id="force_fetch" name="force_fetch">
                             <span class="checkmark"></span>
@@ -69,265 +101,264 @@
                         </label>
                         <small class="helper-text" id="cache-indicator">Cek cache disk...</small>
                     </div>
-                </div>
 
-                <!-- Section 2: Volatility & Line (Pine Script) -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>2. Line & Volatility Settings</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="lineMode">Line Mode</label>
-                            <select id="lineMode" name="lineMode">
-                                <option value="Anchor" selected>Anchor</option>
-                                <option value="Without Anchor">Without Anchor</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="volatilityType">Volatility Type</label>
-                            <select id="volatilityType" name="volatilityType">
-                                <option value="Stdev" selected>Stdev</option>
-                                <option value="Atr">Atr</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="volatilityLength">Lookback Period</label>
-                            <input type="number" id="volatilityLength" name="volatilityLength" value="200" min="2">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="volMult">Multiplier</label>
-                            <input type="number" id="volMult" name="volMult" value="4.0" step="0.1" min="0.1">
-                        </div>
-                    </div>
-                    <div class="form-group checkbox-group" style="margin-top: 6px;">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="realtimeUpdate" name="realtimeUpdate" checked>
-                            <span class="checkmark"></span>
-                            Realtime Update (No Lag Intrabar)
-                        </label>
+                    <!-- Action Buttons Direct on Top Card -->
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
+                        <button type="button" id="btn-run" class="btn btn-primary" style="padding: 14px; font-size: 14px; font-weight: 800; border-radius: 8px;">
+                            ⚡ FETCH & JALANKAN STRATEGY FINDER
+                        </button>
+                        <button type="button" id="btn-recalc" class="btn btn-secondary" style="padding: 10px; font-size: 12px; font-weight: 700; border-radius: 8px;">
+                            🔄 Hitung Ulang Cepat (RAM / Cache)
+                        </button>
                     </div>
                 </div>
 
-                <!-- Section 3: Futures Account Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>3. Futures Account Settings</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="initCap">Saldo Awal (USDT)</label>
-                            <input type="number" id="initCap" name="initCap" value="1000.0" step="10" min="1">
+                <!-- Collapsible Detailed Parameters Accordion -->
+                <details class="mobile-param-drawer">
+                    <summary class="param-drawer-summary">
+                        <span>⚙️ Parameter Lengkap & Filter Strategi</span>
+                        <span class="chevron">▼</span>
+                    </summary>
+                    <div class="drawer-inner">
+                        <!-- Line & Volatility -->
+                        <div class="card form-section">
+                            <div class="section-header"><h3>Line & Volatility Settings</h3></div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="lineMode">Line Mode</label>
+                                    <select id="lineMode" name="lineMode">
+                                        <option value="Anchor" selected>Anchor</option>
+                                        <option value="Without Anchor">Without Anchor</option>
+                                    </select>
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="volatilityType">Volatility Type</label>
+                                    <select id="volatilityType" name="volatilityType">
+                                        <option value="Stdev" selected>Stdev</option>
+                                        <option value="Atr">Atr</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="volatilityLength">Lookback</label>
+                                    <input type="number" id="volatilityLength" name="volatilityLength" value="200" min="2">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="volMult">Multiplier</label>
+                                    <input type="number" id="volMult" name="volMult" value="4.0" step="0.1" min="0.1">
+                                </div>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="realtimeUpdate" name="realtimeUpdate" checked>
+                                    <span class="checkmark"></span> Realtime Update
+                                </label>
+                            </div>
                         </div>
-                        <div class="form-group col-6">
-                            <label for="leverage">Leverage (x)</label>
-                            <input type="number" id="leverage" name="leverage" value="10" min="1" max="125">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="marginPct">Margin per Entry (%)</label>
-                            <input type="number" id="marginPct" name="marginPct" value="5.0" step="0.5" min="0.1" max="100">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="marginBasis">Margin Basis</label>
-                            <select id="marginBasis" name="marginBasis">
-                                <option value="Current Balance" selected>Current Balance</option>
-                                <option value="Initial Balance">Initial Balance</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="feeEntry">Fee Taker (Entry/Stop) %</label>
-                            <input type="number" id="feeEntry" name="feeEntry" value="0.05" step="0.005" min="0">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="feeExit">Fee Exit TP Harga %</label>
-                            <input type="number" id="feeExit" name="feeExit" value="0.05" step="0.005" min="0">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="oneWayRule">Aturan 1 Posisi (One-Way Mode)</label>
-                        <select id="oneWayRule" name="oneWayRule">
-                            <option value="Tutup Posisi Lama & Buka Baru di SR Baru" selected>Tutup Posisi Lama & Buka Baru di SR Baru</option>
-                            <option value="Reverse Jika Lawan Arah, Tahan Jika Searah">Reverse Jika Lawan Arah, Tahan Jika Searah</option>
-                            <option value="Tahan Posisi Lama (Skip SR Baru Jika Masih Open)">Tahan Posisi Lama (Skip SR Baru Jika Masih Open)</option>
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="mmrPct">MMR (%)</label>
-                            <input type="number" id="mmrPct" name="mmrPct" value="0.4" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="maxOpen">Max Open (Hedge)</label>
-                            <input type="number" id="maxOpen" name="maxOpen" value="20" min="2" max="200">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="btDays">BT Days</label>
-                            <input type="number" id="btDays" name="btDays" value="0" min="0" title="0 = semua data">
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Section 4: Strategy Finder Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>4. Strategy Finder (Base Bar & Persen)</h3>
-                    </div>
-                    <div class="form-group checkbox-row">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incTrend" name="incTrend" checked>
-                            <span class="checkmark"></span> Trend
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incCounter" name="incCounter" checked>
-                            <span class="checkmark"></span> Counter
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incHedge" name="incHedge">
-                            <span class="checkmark"></span> Hedge
-                        </label>
-                    </div>
-                    <div class="form-group checkbox-row" style="margin-top: 6px;">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incBarTp" name="incBarTp" checked>
-                            <span class="checkmark"></span> Sertakan TP Bar (BarFix/Prof/Dir)
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incBarSl" name="incBarSl" checked>
-                            <span class="checkmark"></span> Sertakan SL Bar (BarLoss/Max/Adv)
-                        </label>
-                    </div>
+                        <!-- Capital & Money Management -->
+                        <div class="card form-section">
+                            <div class="section-header"><h3>Modal, Leverage & Biaya</h3></div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="initCap">Modal Awal ($)</label>
+                                    <input type="number" id="initCap" name="initCap" value="1000" min="10">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="leverage">Leverage (x)</label>
+                                    <input type="number" id="leverage" name="leverage" value="10" min="1" max="125">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="marginPct">Margin (%)</label>
+                                    <input type="number" id="marginPct" name="marginPct" value="5.0" step="0.5" min="0.1" max="100">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="marginBasis">Basis Margin</label>
+                                    <select id="marginBasis" name="marginBasis">
+                                        <option value="Current Balance" selected>Current Balance</option>
+                                        <option value="Initial Capital">Initial Capital</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="oneWayRule">Aturan 1 Posisi (One-Way)</label>
+                                <select id="oneWayRule" name="oneWayRule">
+                                    <option value="Tutup Posisi Lama & Buka Baru di SR Baru" selected>Tutup Posisi Lama & Buka Baru di SR Baru</option>
+                                    <option value="Reverse Jika Lawan Arah, Tahan Jika Searah">Reverse Jika Lawan Arah, Tahan Jika Searah</option>
+                                    <option value="Tahan Posisi Lama (Skip SR Baru Jika Masih Open)">Tahan Posisi Lama (Skip SR Baru Jika Masih Open)</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-4">
+                                    <label for="feeEntry">Fee Entry %</label>
+                                    <input type="number" id="feeEntry" name="feeEntry" value="0.05" step="0.01">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="feeExit">Fee Exit %</label>
+                                    <input type="number" id="feeExit" name="feeExit" value="0.05" step="0.01">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="mmrPct">MMR %</label>
+                                    <input type="number" id="mmrPct" name="mmrPct" value="0.4" step="0.05">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="maxOpen">Max Open (Hedge)</label>
+                                    <input type="number" id="maxOpen" name="maxOpen" value="20" min="2" max="200">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="btDays">BT Days (0=Semua)</label>
+                                    <input type="number" id="btDays" name="btDays" value="0" min="0">
+                                </div>
+                            </div>
+                        </div>
 
-                    <!-- Param Fixed % -->
-                    <div class="form-row" style="margin-top: 6px;">
-                        <div class="form-group col-4">
-                            <label for="fixed1">Fixed 1 (%)</label>
-                            <input type="number" id="fixed1" name="fixed1" value="0.3" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed2">Fixed 2 (%)</label>
-                            <input type="number" id="fixed2" name="fixed2" value="0.6" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed3">Fixed 3 (%)</label>
-                            <input type="number" id="fixed3" name="fixed3" value="1.0" step="0.05" min="0.01">
+                        <!-- Strategy Finder Filters & TP/SL -->
+                        <div class="card form-section">
+                            <div class="section-header"><h3>Pengaturan 105 Strategi</h3></div>
+                            <div class="form-group checkbox-row">
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="incTrend" name="incTrend" checked>
+                                    <span class="checkmark"></span> Trend
+                                </label>
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="incCounter" name="incCounter" checked>
+                                    <span class="checkmark"></span> Counter
+                                </label>
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="incHedge" name="incHedge">
+                                    <span class="checkmark"></span> Hedge
+                                </label>
+                            </div>
+                            <div class="form-group checkbox-row" style="margin-top: 6px;">
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="incBarTp" name="incBarTp" checked>
+                                    <span class="checkmark"></span> TP Bar (BarFix/Prof/Dir)
+                                </label>
+                                <label class="custom-checkbox">
+                                    <input type="checkbox" id="incBarSl" name="incBarSl" checked>
+                                    <span class="checkmark"></span> SL Bar (BarLoss/Max/Adv)
+                                </label>
+                            </div>
+
+                            <div class="form-row" style="margin-top: 6px;">
+                                <div class="form-group col-4">
+                                    <label for="fixed1">Fixed 1 %</label>
+                                    <input type="number" id="fixed1" name="fixed1" value="0.3" step="0.05">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="fixed2">Fixed 2 %</label>
+                                    <input type="number" id="fixed2" name="fixed2" value="0.6" step="0.05">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="fixed3">Fixed 3 %</label>
+                                    <input type="number" id="fixed3" name="fixed3" value="1.0" step="0.05">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-4">
+                                    <label for="barTp1">TP Bar B1</label>
+                                    <input type="number" id="barTp1" name="barTp1" value="3">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="barTp2">TP Bar B2</label>
+                                    <input type="number" id="barTp2" name="barTp2" value="6">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="barTpDir">Searah BD</label>
+                                    <input type="number" id="barTpDir" name="barTpDir" value="3">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-4">
+                                    <label for="slBar1">SL Bar S1</label>
+                                    <input type="number" id="slBar1" name="slBar1" value="4">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="slBar2">SL Bar S2</label>
+                                    <input type="number" id="slBar2" name="slBar2" value="8">
+                                </div>
+                                <div class="form-group col-4">
+                                    <label for="slBarAdv">Lawan SA</label>
+                                    <input type="number" id="slBarAdv" name="slBarAdv" value="3">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="minLevels">Min SR Selesai (M)</label>
+                                    <input type="number" id="minLevels" name="minLevels" value="10">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="rankBy">Ranking Leaderboard</label>
+                                    <select id="rankBy" name="rankBy">
+                                        <option value="Net / Max DD" selected>Net / Max DD</option>
+                                        <option value="Net Profit %">Net Profit %</option>
+                                        <option value="Profit Factor">Profit Factor</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="stratFilter">Filter Strategi</label>
+                                <select id="stratFilter" name="stratFilter">
+                                    <option value="Semua Strategi" selected>Semua Strategi</option>
+                                    <option value="Base Bar (Semua TP / SL Bar)">Base Bar (Semua TP / SL Bar)</option>
+                                    <option value="Base Bar Murni (TP Bar + SL Bar)">Base Bar Murni (TP Bar + SL Bar)</option>
+                                    <option value="Base Bar - TP Saja">Base Bar - TP Saja</option>
+                                    <option value="Base Bar - SL Saja">Base Bar - SL Saja</option>
+                                    <option value="Base Persen (Semua Fixed % & Median %)">Base Persen (Semua Fixed % & Median %)</option>
+                                    <option value="Base Persen Tetap (Fixed F1/F2/F3 %)">Base Persen Tetap (Fixed F1/F2/F3 %)</option>
+                                    <option value="Base Persen Median (0.5M / 1M %)">Base Persen Median (0.5M / 1M %)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="topN">Top N</label>
+                                    <input type="number" id="topN" name="topN" value="15" min="3" max="105">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="tableMode">Mode Tampilan</label>
+                                    <select id="tableMode" name="tableMode">
+                                        <option value="Keduanya (Top + Detail)" selected>Top + Detail</option>
+                                        <option value="Top Strategy (Leaderboard Saja)">Leaderboard Saja</option>
+                                        <option value="Detail Strategy (Detail Saja)">Detail Saja</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="selStrategy">Pilih Strategi Aktif</label>
+                                <select id="selStrategy" name="selStrategy">
+                                    <option value="Top #1 Sesuai Filter Leaderboard (Otomatis)" selected>Top #1 Sesuai Filter Leaderboard (Otomatis)</option>
+                                    <option value="Top #1 Semua Strategi (Otomatis)">Top #1 Semua Strategi (Otomatis)</option>
+                                    <option value="Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)">Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)</option>
+                                    <option value="Top #1 Base Bar TP (Bar TP Terbaik)">Top #1 Base Bar TP (Bar TP Terbaik)</option>
+                                    <option value="Top #1 Base Bar SL (Bar SL Terbaik)">Top #1 Base Bar SL (Bar SL Terbaik)</option>
+                                    <option value="Top #1 Base Persen Tetap (Fixed % Terbaik)">Top #1 Base Persen Tetap (Fixed % Terbaik)</option>
+                                    <option value="Top #1 Base Persen Median (Median % Terbaik)">Top #1 Base Persen Median (Median % Terbaik)</option>
+                                    <option value="None">None</option>
+                                    {% for key in strategy_keys %}
+                                    <option value="{{ key }}">{{ key }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                         </div>
                     </div>
-
-                    <!-- Param Bar TP -->
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="barTp1">TP Bar B1</label>
-                            <input type="number" id="barTp1" name="barTp1" value="3" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="barTp2">TP Bar B2</label>
-                            <input type="number" id="barTp2" name="barTp2" value="6" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="barTpDir">Searah BD</label>
-                            <input type="number" id="barTpDir" name="barTpDir" value="3" min="1" max="20">
-                        </div>
-                    </div>
-
-                    <!-- Param Bar SL -->
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="slBar1">SL Bar S1</label>
-                            <input type="number" id="slBar1" name="slBar1" value="4" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="slBar2">SL Bar S2</label>
-                            <input type="number" id="slBar2" name="slBar2" value="8" min="1" max="100">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="slBarAdv">Lawan SA</label>
-                            <input type="number" id="slBarAdv" name="slBarAdv" value="3" min="1" max="20">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="minLevels">Min SR Selesai (M)</label>
-                            <input type="number" id="minLevels" name="minLevels" value="10" min="1">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="rankBy">Ranking By</label>
-                            <select id="rankBy" name="rankBy">
-                                <option value="Net / Max DD" selected>Net / Max DD</option>
-                                <option value="Net Profit %">Net Profit %</option>
-                                <option value="Profit Factor">Profit Factor</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="stratFilter">Filter Strategi di Leaderboard</label>
-                        <select id="stratFilter" name="stratFilter">
-                            <option value="Semua Strategi" selected>Semua Strategi</option>
-                            <option value="Base Bar (Semua TP / SL Bar)">Base Bar (Semua TP / SL Bar)</option>
-                            <option value="Base Bar Murni (TP Bar + SL Bar)">Base Bar Murni (TP Bar + SL Bar)</option>
-                            <option value="Base Bar - TP Saja">Base Bar - TP Saja</option>
-                            <option value="Base Bar - SL Saja">Base Bar - SL Saja</option>
-                            <option value="Base Persen (Semua Fixed % & Median %)">Base Persen (Semua Fixed % & Median %)</option>
-                            <option value="Base Persen Tetap (Fixed F1/F2/F3 %)">Base Persen Tetap (Fixed F1/F2/F3 %)</option>
-                            <option value="Base Persen Median (0.5M / 1M %)">Base Persen Median (0.5M / 1M %)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="topN">Top N (Leaderboard)</label>
-                            <input type="number" id="topN" name="topN" value="15" min="3" max="105">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="tableMode">Tampilkan Tabel</label>
-                            <select id="tableMode" name="tableMode">
-                                <option value="Keduanya (Top + Detail)" selected>Keduanya (Top + Detail)</option>
-                                <option value="Top Strategy (Leaderboard Saja)">Leaderboard Saja</option>
-                                <option value="Detail Strategy (Detail Saja)">Detail Saja</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="selStrategy">Pilih Strategi (Visual & Detail)</label>
-                        <select id="selStrategy" name="selStrategy">
-                            <option value="Top #1 Sesuai Filter Leaderboard (Otomatis)" selected>Top #1 Sesuai Filter Leaderboard (Otomatis)</option>
-                            <option value="Top #1 Semua Strategi (Otomatis)">Top #1 Semua Strategi (Otomatis)</option>
-                            <option value="Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)">Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)</option>
-                            <option value="Top #1 Base Bar TP (Bar TP Terbaik)">Top #1 Base Bar TP (Bar TP Terbaik)</option>
-                            <option value="Top #1 Base Bar SL (Bar SL Terbaik)">Top #1 Base Bar SL (Bar SL Terbaik)</option>
-                            <option value="Top #1 Base Persen Tetap (Fixed % Terbaik)">Top #1 Base Persen Tetap (Fixed % Terbaik)</option>
-                            <option value="Top #1 Base Persen Median (Median % Terbaik)">Top #1 Base Persen Median (Median % Terbaik)</option>
-                            <option value="None">None</option>
-                            {% for key in strategy_keys %}
-                            <option value="{{ key }}">{{ key }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Submit Buttons -->
-                <div class="button-actions">
-                    <button type="button" id="btn-run" class="btn btn-primary">
-                        <span class="btn-icon">⚡</span> Fetch & Jalankan Simulasi
-                    </button>
-                    <button type="button" id="btn-recalc" class="btn btn-secondary" title="Jalankan ulang simulasi menggunakan data yang sudah ada di RAM/cache tanpa request ulang Binance">
-                        <span class="btn-icon">🔄</span> Hitung Ulang Cepat (RAM)
-                    </button>
-                </div>
+                </details>
             </form>
         </aside>
 
-        <!-- Main Display / Tables -->
+        <!-- Main Display / Results Panel -->
         <main class="content-panel">
-            <!-- Progress & Notifications -->
+            <!-- Progress Bar -->
             <div id="progress-container" class="card progress-card" style="display: none;">
                 <div class="progress-info">
                     <span id="progress-label" class="progress-label">Menghubungkan ke Binance FAPI...</span>
@@ -338,7 +369,7 @@
                 </div>
                 <div id="milestone-alert" class="milestone-box" style="display: none;">
                     <span class="pulse-icon">⏳</span>
-                    <span id="milestone-text">Batas kelipatan 360 hari tercapai. Jeda 1 menit sesuai aturan (tersisa 60s)...</span>
+                    <span id="milestone-text">Jeda 1 menit sesuai aturan Binance...</span>
                 </div>
             </div>
 
@@ -362,13 +393,47 @@
                 </div>
             </div>
 
-            <!-- Tables Grid -->
-            <div class="tables-grid">
-                <!-- Leaderboard Table -->
-                <div id="leaderboard-container" class="card table-card">
-                    <div class="table-header-bar blue-header">
-                        <h2 id="ld-title">STRATEGY FINDER | CROSS | 105 strategi | rank: Net / Max DD</h2>
+            <!-- Segmented Mobile Navigation Tabs (No More Side-by-Side Tables!) -->
+            <div class="mobile-segment-tabs">
+                <button type="button" class="seg-tab active" data-tab="tab-leaderboard">
+                    🏆 Top Leaderboard
+                </button>
+                <button type="button" class="seg-tab" data-tab="tab-detail">
+                    📊 Detail Strategi
+                </button>
+                <button type="button" class="seg-tab" data-tab="tab-trades">
+                    📋 Log Trade & Posisi
+                </button>
+            </div>
+
+            <!-- TAB 1: LEADERBOARD VIEW -->
+            <div id="tab-leaderboard" class="seg-content" style="display: block;">
+                <!-- View Mode Switcher -->
+                <div class="view-mode-bar">
+                    <span class="view-mode-title" id="ld-title">STRATEGY FINDER (105 STRATEGI)</span>
+                    <div class="view-mode-pills">
+                        <button type="button" class="view-mode-btn active" id="btn-view-cards">🗂️ Kartu</button>
+                        <button type="button" class="view-mode-btn" id="btn-view-table">📊 Tabel</button>
                     </div>
+                </div>
+
+                <!-- Category Winners Showcase -->
+                <div class="cat-winners-container" id="cat-winners-wrap" style="display: none;">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px;">
+                        🏆 Pemenang Terbaik Per Kategori
+                    </div>
+                    <div class="cat-winners-grid" id="cat-winners-grid"></div>
+                </div>
+
+                <!-- Mobile Strategy Cards List (Default for Phone) -->
+                <div id="ld-cards" class="strat-cards-list">
+                    <div style="text-align: center; padding: 30px 10px; color: var(--text-dim);">
+                        Klik <strong>"FETCH & JALANKAN STRATEGY FINDER"</strong> untuk memulai simulasi 105 strategi.
+                    </div>
+                </div>
+
+                <!-- Table View Fallback (Hidden by default on mobile cards mode) -->
+                <div id="ld-table-container" class="card table-card" style="display: none;">
                     <div class="table-responsive">
                         <table class="pine-table leaderboard-table" id="table-leaderboard">
                             <thead>
@@ -385,77 +450,94 @@
                                 </tr>
                             </thead>
                             <tbody id="ld-body">
-                                <tr>
-                                    <td colspan="9" class="text-center empty-cell">Silakan klik "Fetch & Jalankan Simulasi" untuk memulai</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Detail Table -->
-                <div id="detail-container" class="card table-card">
-                    <div class="table-header-bar blue-header">
-                        <h2 id="dt-title">DETAIL STRATEGY</h2>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="pine-table detail-table" id="table-detail">
-                            <tbody id="dt-body">
-                                <tr>
-                                    <td colspan="2" class="text-center empty-cell">Data detail belum tersedia</td>
-                                </tr>
+                                <tr><td colspan="9" class="text-center empty-cell">Belum ada data</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            <!-- Auxiliary Insights: Recent Trades & Active Positions -->
-            <div class="card aux-card" id="aux-container" style="display: none;">
-                <div class="aux-tabs">
-                    <button class="tab-btn active" data-tab="trades-tab">Riwayat Trade Terakhir (Closed Trades)</button>
-                    <button class="tab-btn" data-tab="positions-tab">Posisi Terbuka Saat Ini (Open Positions)</button>
+            <!-- TAB 2: DETAIL METRIC VIEW -->
+            <div id="tab-detail" class="seg-content" style="display: none;">
+                <div class="view-mode-bar">
+                    <span class="view-mode-title" id="dt-title">DETAIL METRIK STRATEGI</span>
+                    <button type="button" class="btn btn-secondary" id="btn-back-to-ld" style="font-size: 11px; padding: 4px 10px;">
+                        ← Kembali ke Leaderboard
+                    </button>
                 </div>
-                <div class="tab-content active" id="trades-tab">
+
+                <!-- Mobile Metric Cards Grid -->
+                <div class="detail-metrics-cards" id="dt-cards-grid">
+                    <div class="card detail-metric-card" style="grid-column: 1 / -1; text-align: center; padding: 24px; color: var(--text-dim);">
+                        Pilih salah satu strategi di tab <strong>Leaderboard</strong> untuk melihat rincian metrik lengkap di sini.
+                    </div>
+                </div>
+
+                <!-- Detail Table Fallback -->
+                <div id="dt-table-container" class="card table-card" style="margin-top: 12px;">
                     <div class="table-responsive">
-                        <table class="pine-table aux-table">
-                            <thead>
-                                <tr>
-                                    <th>Side</th>
-                                    <th>Entry Time</th>
-                                    <th>Entry Px</th>
-                                    <th>TP Target</th>
-                                    <th>SL Target</th>
-                                    <th>Exit Time</th>
-                                    <th>Exit Px</th>
-                                    <th>Alasan Exit</th>
-                                    <th>Move %</th>
-                                    <th>Net PnL</th>
-                                </tr>
-                            </thead>
-                            <tbody id="trades-body"></tbody>
+                        <table class="pine-table detail-table" id="table-detail">
+                            <tbody id="dt-body">
+                                <tr><td colspan="2" class="text-center empty-cell">Data detail belum tersedia</td></tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
-                <div class="tab-content" id="positions-tab">
-                    <div class="table-responsive">
-                        <table class="pine-table aux-table">
-                            <thead>
-                                <tr>
-                                    <th>Side</th>
-                                    <th>Entry Time</th>
-                                    <th>Entry Px</th>
-                                    <th>Qty</th>
-                                    <th>Margin</th>
-                                    <th>Fee Entry</th>
-                                    <th>Target TP</th>
-                                    <th>Level SL</th>
-                                    <th>Floating %</th>
-                                    <th>Net Float PnL</th>
-                                </tr>
-                            </thead>
-                            <tbody id="positions-body"></tbody>
-                        </table>
+            </div>
+
+            <!-- TAB 3: TRADES & POSITIONS VIEW -->
+            <div id="tab-trades" class="seg-content" style="display: none;">
+                <div id="aux-container" class="card aux-card">
+                    <div class="tab-header">
+                        <button type="button" class="tab-btn active" data-tab="tab-trades-list">Riwayat Trade (<span id="trades-count">0</span>)</button>
+                        <button type="button" class="tab-btn" data-tab="tab-positions-list">Posisi Tertahan (<span id="positions-count">0</span>)</button>
+                    </div>
+
+                    <div id="tab-trades-list" class="tab-content active">
+                        <div class="table-responsive">
+                            <table class="pine-table aux-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Arah</th>
+                                        <th>Entry Waktu</th>
+                                        <th>Entry Px</th>
+                                        <th>Exit Waktu</th>
+                                        <th>Exit Px</th>
+                                        <th>Alasan Exit</th>
+                                        <th>PnL %</th>
+                                        <th>PnL ($)</th>
+                                        <th>Balance ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trades-body">
+                                    <tr><td colspan="10" class="text-center empty-cell">Belum ada riwayat trade</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="tab-positions-list" class="tab-content">
+                        <div class="table-responsive">
+                            <table class="pine-table aux-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Level SR</th>
+                                        <th>Arah</th>
+                                        <th>Entry Px</th>
+                                        <th>Qty</th>
+                                        <th>Margin ($)</th>
+                                        <th>TP Px</th>
+                                        <th>SL Px</th>
+                                        <th>Floating PnL ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="positions-body">
+                                    <tr><td colspan="9" class="text-center empty-cell">Tidak ada posisi tertahan</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
