@@ -331,9 +331,10 @@
             function loadStrategyKeys() {
                 fetch('/api/strategy_keys')
                     .then(res => res.json())
-                    .then(keys => {
+                    .then(data => {
+                        const keys = Array.isArray(data) ? data : (data.keys || []);
                         const sel = document.getElementById('manual_strategy_key');
-                        if (sel && Array.isArray(keys)) {
+                        if (sel && keys.length > 0) {
                             sel.innerHTML = '';
                             keys.forEach(k => {
                                 const opt = document.createElement('option');

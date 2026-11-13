@@ -39,9 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load 105 strategy keys into selStrategy
     fetch('/api/strategy_keys')
         .then(res => res.json())
-        .then(keys => {
+        .then(data => {
+            const keys = Array.isArray(data) ? data : (data.keys || []);
             const sel = document.getElementById('selStrategy');
-            if (sel && Array.isArray(keys)) {
+            if (sel && keys.length > 0) {
                 keys.forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k;
