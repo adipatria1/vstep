@@ -122,35 +122,8 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
 
         // Halaman Backtest Strategy Finder
         (&Method::Get, "/backtest") => {
-            let all_keys = get_all_strategy_keys();
-            let mut options_html = String::new();
-
-            let auto_opts = [
-                "Top #1 Sesuai Filter Leaderboard (Otomatis)",
-                "Top #1 Semua Strategi (Otomatis)",
-                "Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)",
-                "Top #1 Base Bar TP (Bar TP Terbaik)",
-                "Top #1 Base Bar SL (Bar SL Terbaik)",
-                "Top #1 Base Persen Tetap (Fixed % Terbaik)",
-                "Top #1 Base Persen Median (Median % Terbaik)",
-                "None",
-            ];
-            for opt in auto_opts {
-                options_html.push_str(&format!("<option value=\"{}\">{}</option>\n", opt, opt));
-            }
-            for k in all_keys {
-                options_html.push_str(&format!("<option value=\"{}\">{}</option>\n", k, k));
-            }
-
-            let template_loop = "{% for key in strategy_keys %}\n                            <option value=\"{{ key }}\">{{ key }}</option>\n                            {% endfor %}";
-            let html = if BACKTEST_HTML.contains(template_loop) {
-                BACKTEST_HTML.replace(template_loop, &options_html)
-            } else {
-                BACKTEST_HTML.to_string()
-            };
-
             let header = Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap();
-            let response = Response::from_string(html).with_header(header);
+            let response = Response::from_string(BACKTEST_HTML).with_header(header);
             let _ = request.respond(response);
         }
 

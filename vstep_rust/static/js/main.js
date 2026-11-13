@@ -36,6 +36,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentEventSource = null;
     let lastResult = null;
 
+    // Load 105 strategy keys into selStrategy
+    fetch('/api/strategy_keys')
+        .then(res => res.json())
+        .then(keys => {
+            const sel = document.getElementById('selStrategy');
+            if (sel && Array.isArray(keys)) {
+                keys.forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k;
+                    opt.textContent = k;
+                    sel.appendChild(opt);
+                });
+            }
+        })
+        .catch(err => console.error('Gagal memuat strategy keys backtest:', err));
+
     // ==========================================
     // 1. MOBILE CHIPS INTERACTION
     // ==========================================

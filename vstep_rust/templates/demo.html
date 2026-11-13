@@ -123,7 +123,7 @@
                         <input type="text" id="manual_symbols" name="manual_symbols" value="BTCUSDT,ETHUSDT,SOLUSDT">
                     </div>
 
-                    <div class="form-row">
+                    <div class="form-row" id="screener-options-group">
                         <div class="form-group col-6">
                             <label for="screener_source">Sumber Screener</label>
                             <select id="screener_source" name="screener_source">
@@ -168,9 +168,40 @@
                     </div>
                 </div>
 
-                <!-- Section 2: Strategy Finder Preset -->
+                <!-- Section 2: Line & Volatility Settings -->
                 <div class="card form-section" style="padding: 16px; margin-bottom: 12px;">
-                    <div class="section-header"><h3>2. Strategy Finder Preset (105 Strategi)</h3></div>
+                    <div class="section-header"><h3>2. Line & Volatility Settings</h3></div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="line_mode">Line Mode</label>
+                            <select id="line_mode" name="line_mode">
+                                <option value="Anchor" selected>Anchor</option>
+                                <option value="Without Anchor">Without Anchor</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="volatility_type">Volatility Type</label>
+                            <select id="volatility_type" name="volatility_type">
+                                <option value="Stdev" selected>Stdev</option>
+                                <option value="Atr">Atr</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="volatility_length">Lookback</label>
+                            <input type="number" id="volatility_length" name="volatility_length" value="200" min="2">
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="vol_mult">Multiplier</label>
+                            <input type="number" id="vol_mult" name="vol_mult" value="4.0" step="0.1" min="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Strategy Finder Preset -->
+                <div class="card form-section" style="padding: 16px; margin-bottom: 12px;">
+                    <div class="section-header"><h3>3. Strategy Finder Preset (105 Strategi)</h3></div>
                     <div class="form-group">
                         <label for="strategy_mode">Pilihan Strategi</label>
                         <select id="strategy_mode" name="strategy_mode">
@@ -182,9 +213,7 @@
                     <div class="form-group" id="manual-strat-group" style="display: none;">
                         <label for="manual_strategy_key">Pilih Kunci Strategi</label>
                         <select id="manual_strategy_key" name="manual_strategy_key">
-                            {% for key in strategy_keys %}
-                            <option value="{{ key }}">{{ key }}</option>
-                            {% endfor %}
+                            <option value="">-- Memuat 105 Strategi... --</option>
                         </select>
                     </div>
 
@@ -227,9 +256,9 @@
                     </div>
                 </div>
 
-                <!-- Section 3: Leverage & Alokasi Modal -->
+                <!-- Section 4: Leverage & Alokasi Modal -->
                 <div class="card form-section" style="padding: 16px;">
-                    <div class="section-header"><h3>3. Leverage & Alokasi Modal</h3></div>
+                    <div class="section-header"><h3>4. Leverage & Alokasi Modal</h3></div>
                     <div class="form-row">
                         <div class="form-group col-6">
                             <label for="leverage_mode">Mode Leverage</label>
@@ -291,11 +320,32 @@
 
             const coinMode = document.getElementById('coin_mode');
             const manualSymGroup = document.getElementById('manual-sym-group');
+            const screenerOptionsGroup = document.getElementById('screener-options-group');
             const strategyMode = document.getElementById('strategy_mode');
             const manualStratGroup = document.getElementById('manual-strat-group');
             const executionMode = document.getElementById('execution_mode');
             const preCloseBufferGroup = document.getElementById('pre-close-buffer-group');
             const execHelperText = document.getElementById('exec-helper-text');
+
+            // Load 105 Strategy Keys dynamically
+            function loadStrategyKeys() {
+                fetch('/api/strategy_keys')
+                    .then(res => res.json())
+                    .then(keys => {
+                        const sel = document.getElementById('manual_strategy_key');
+                        if (sel && Array.isArray(keys)) {
+                            sel.innerHTML = '';
+                            keys.forEach(k => {
+                                const opt = document.createElement('option');
+                                opt.value = k;
+                                opt.textContent = k;
+                                sel.appendChild(opt);
+                            });
+                        }
+                    })
+                    .catch(err => console.error('Gagal memuat kunci strategi:', err));
+            }
+            loadStrategyKeys();
 
             // Segmented Tabs
             const segTabs = document.querySelectorAll('.seg-tab');
@@ -312,9 +362,15 @@
                 });
             });
 
-            coinMode.addEventListener('change', () => {
-                manualSymGroup.style.display = (coinMode.value === 'manual') ? 'block' : 'none';
-            });
+            function syncCoinModeUI() {
+                const isManual = (coinMode.value === 'manual');
+                manualSymGroup.style.display = isManual ? 'block' : 'none';
+                if (screenerOptionsGroup) {
+                    screenerOptionsGroup.style.display = isManual ? 'none' : 'flex';
+                }
+            }
+            coinMode.addEventListener('change', syncCoinModeUI);
+            syncCoinModeUI();
 
             strategyMode.addEventListener('change', () => {
                 manualStratGroup.style.display = (strategyMode.value === 'manual') ? 'block' : 'none';
@@ -538,10 +594,10 @@
                         screener_source: document.getElementById('screener_source').value,
                         max_coins: parseInt(document.getElementById('max_coins').value, 10),
                         timeframe: document.getElementById('timeframe').value,
-                        line_mode: "Anchor",
-                        volatility_type: "Stdev",
-                        volatility_length: 200,
-                        vol_mult: 4.0,
+                        line_mode: document.getElementById('line_mode').value,
+                        volatility_type: document.getElementById('volatility_type').value,
+                        volatility_length: parseInt(document.getElementById('volatility_length').value, 10) || 200,
+                        vol_mult: parseFloat(document.getElementById('vol_mult').value) || 4.0,
                         strategy_mode: strategyMode.value,
                         manual_strategy_key: document.getElementById('manual_strategy_key').value,
                         strat_filter: document.getElementById('strat_filter').value,
