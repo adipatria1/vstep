@@ -11,7 +11,7 @@ use crate::binance_api::{
     AccountBalanceInfo, LivePositionInfo,
 };
 use crate::credentials::load_credentials;
-use crate::engine::{calculate_step_sr, calculate_volatility, run_backtest};
+use crate::engine::{calculate_step_sr, calculate_volatility, create_sim_suite, median, run_backtest};
 use crate::fetcher::fetch_binance_fapi_klines_by_count;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -19,6 +19,169 @@ pub struct LogEntry {
     pub time: String,
     pub level: String, // "info", "success", "warning", "error", "trade"
     pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActiveTradeState {
+    pub symbol: String,
+    pub side: String, // "BUY" or "SELL"
+    pub entry_price: f64,
+    pub quantity: f64,
+    pub entry_time_ms: i64,
+
+    pub tp_price: Option<f64>,
+    pub sl_price: Option<f64>,
+    pub tp_desc: String,
+    pub sl_desc: String,
+
+    pub use_trailing: bool,
+    pub tr_act_pct: f64,
+    pub tr_dist_pct: f64,
+    pub tr_extreme: f64,
+    pub tr_stop_price: Option<f64>,
+
+    pub tp_bar_type: i32,   // 0 none, 3 BarFix, 4 BarProf, 5 BarDir
+    pub tp_bar_target: i32,
+    pub sl_bar_type: i32,   // 0 none, 3 BarLoss, 4 MaxBar, 5 BarAdv
+    pub sl_bar_target: i32,
+    pub bars_held: i32,
+    pub dir_candle_count: i32,
+    pub adv_candle_count: i32,
+
+    pub sl_next_sr: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActiveSimConfig {
+    pub name: String,
+    pub key: String,
+    pub mode: i32, // 0 Hedge, 1 Trend, 2 Counter
+    pub tp_t: i32, // 0 none, 1 med, 2 fix, 3 BarFix, 4 BarProf, 5 BarDir
+    pub tp_v: f64,
+    pub sl_t: i32, // 0 NextSR, 1 med, 2 fix, 3 BarLoss, 4 MaxBar, 5 BarAdv
+    pub sl_v: f64,
+    pub use_tr: bool,
+    pub tr_u: i32, // 1 med, 2 fix
+    pub tr_a: f64,
+    pub tr_d: f64,
+}
+
+impl ActiveSimConfig {
+    pub fn default_trend() -> Self {
+        Self {
+            name: "TREND | TP BarProf B1 | SL BarLoss S1".to_string(),
+            key: "TREND | TP BarProf B1 | SL BarLoss S1".to_string(),
+            mode: 1,
+            tp_t: 4,
+            tp_v: 3.0,
+            sl_t: 3,
+            sl_v: 4.0,
+            use_tr: false,
+            tr_u: 1,
+            tr_a: 0.0,
+            tr_d: 0.0,
+        }
+    }
+}
+
+pub fn resolve_sim_config(chosen_strat: &str, cfg: &BotConfig) -> ActiveSimConfig {
+    let suite = create_sim_suite(
+        true, true, true, true, true,
+        cfg.fixed1, cfg.fixed2, cfg.fixed3,
+        cfg.bar_tp1, cfg.bar_tp2, cfg.bar_tp_dir,
+        cfg.sl_bar1, cfg.sl_bar2, cfg.sl_bar_adv,
+        1000.0,
+        chosen_strat,
+    );
+
+    if let Some(s) = suite.iter().find(|s| s.key == chosen_strat || s.name == chosen_strat || chosen_strat.contains(&s.key) || s.key.contains(chosen_strat)) {
+        return ActiveSimConfig {
+            name: s.name.clone(),
+            key: s.key.clone(),
+            mode: s.mode,
+            tp_t: s.tp_t,
+            tp_v: s.tp_v,
+            sl_t: s.sl_t,
+            sl_v: s.sl_v,
+            use_tr: s.use_tr,
+            tr_u: s.tr_u,
+            tr_a: s.tr_a,
+            tr_d: s.tr_d,
+        };
+    }
+
+    // Fallback parser if not found in suite
+    let mode = if chosen_strat.starts_with("COUNTER") { 2 } else if chosen_strat.starts_with("HEDGE") { 0 } else { 1 };
+
+    let (tp_t, tp_v) = if chosen_strat.contains("TP 0.5M") {
+        (1, 0.5)
+    } else if chosen_strat.contains("TP 1M") {
+        (1, 1.0)
+    } else if chosen_strat.contains("TP F1") {
+        (2, cfg.fixed1)
+    } else if chosen_strat.contains("TP F2") {
+        (2, cfg.fixed2)
+    } else if chosen_strat.contains("TP F3") {
+        (2, cfg.fixed3)
+    } else if chosen_strat.contains("BarFix B1") {
+        (3, cfg.bar_tp1 as f64)
+    } else if chosen_strat.contains("BarFix B2") {
+        (3, cfg.bar_tp2 as f64)
+    } else if chosen_strat.contains("BarProf B1") {
+        (4, cfg.bar_tp1 as f64)
+    } else if chosen_strat.contains("BarProf B2") {
+        (4, cfg.bar_tp2 as f64)
+    } else if chosen_strat.contains("BarDir") {
+        (5, cfg.bar_tp_dir as f64)
+    } else {
+        (0, 0.0)
+    };
+
+    let (sl_t, sl_v) = if chosen_strat.contains("SL 0.5M") {
+        (1, 0.5)
+    } else if chosen_strat.contains("SL 1M") {
+        (1, 1.0)
+    } else if chosen_strat.contains("SL F1") {
+        (2, cfg.fixed1)
+    } else if chosen_strat.contains("SL F2") {
+        (2, cfg.fixed2)
+    } else if chosen_strat.contains("BarLoss S1") {
+        (3, cfg.sl_bar1 as f64)
+    } else if chosen_strat.contains("BarLoss S2") {
+        (3, cfg.sl_bar2 as f64)
+    } else if chosen_strat.contains("MaxBar S1") {
+        (4, cfg.sl_bar1 as f64)
+    } else if chosen_strat.contains("MaxBar S2") {
+        (4, cfg.sl_bar2 as f64)
+    } else if chosen_strat.contains("BarAdv SA") {
+        (5, cfg.sl_bar_adv as f64)
+    } else {
+        (0, 0.0) // NextSR
+    };
+
+    let (use_tr, tr_u, tr_a, tr_d) = if chosen_strat.contains("Trail 0.5M/0.5M") {
+        (true, 1, 0.5, 0.5)
+    } else if chosen_strat.contains("Trail 1M/0.5M") {
+        (true, 1, 1.0, 0.5)
+    } else if chosen_strat.contains("Trail F2/F1") {
+        (true, 2, cfg.fixed2, cfg.fixed1)
+    } else {
+        (false, 1, 0.0, 0.0)
+    };
+
+    ActiveSimConfig {
+        name: chosen_strat.to_string(),
+        key: chosen_strat.to_string(),
+        mode,
+        tp_t,
+        tp_v,
+        sl_t,
+        sl_v,
+        use_tr,
+        tr_u,
+        tr_a,
+        tr_d,
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -121,11 +284,15 @@ pub struct BotState {
     pub cached_positions: Vec<LivePositionInfo>,
     pub last_warmup_symbol: String,
     pub last_selected_strategy: String,
+    pub active_sim: Option<ActiveSimConfig>,
     pub current_sr: f64,
     pub current_vol: f64,
+    pub med_h: f64,
+    pub med_l: f64,
     pub active_leverage: i32,
     pub last_evaluated_bar: i64,
     pub position_bars_held: i32,
+    pub active_trade: Option<ActiveTradeState>,
 }
 
 impl BotState {
@@ -144,11 +311,15 @@ impl BotState {
             cached_positions: Vec::new(),
             last_warmup_symbol: String::new(),
             last_selected_strategy: String::new(),
+            active_sim: None,
             current_sr: 0.0,
             current_vol: 0.0,
+            med_h: 1.0,
+            med_l: 1.0,
             active_leverage: 10,
             last_evaluated_bar: 0,
             position_bars_held: 0,
+            active_trade: None,
         }
     }
 
@@ -202,6 +373,7 @@ impl SharedBotState {
                 lock.last_warmup_symbol.clear();
                 lock.last_evaluated_bar = 0;
                 lock.position_bars_held = 0;
+                lock.active_trade = None;
 
                 let mode_str = match lock.config.coin_mode.as_str() {
                     "top_gainers" => format!("Top {} Gainers 24h", lock.config.max_active_slots),
@@ -261,6 +433,7 @@ impl SharedBotState {
     pub fn panic_close_all(&self) -> Result<usize, String> {
         let creds = load_credentials();
         let mut lock = self.0.lock().unwrap();
+        lock.active_trade = None;
         lock.add_log("error", "⚠️ PANIC CLOSE ALL TRIGGERED! Mengirim market close untuk semua posisi terbuka...");
 
         match panic_close_all_positions(&creds.demo_api_key, &creds.demo_secret_key) {
@@ -339,7 +512,13 @@ impl SharedBotState {
                             Err(_) => cfg.manual_symbol.clone(),
                         }
                     }
-                    _ => cfg.manual_symbol.clone(),
+                    _ => {
+                        if !cfg.manual_symbol.is_empty() {
+                            cfg.manual_symbol.clone()
+                        } else {
+                            cfg.manual_symbols.first().cloned().unwrap_or_else(|| "BTCUSDT".to_string())
+                        }
+                    }
                 };
 
                 // 2. Warm-up check untuk target_symbol
@@ -350,11 +529,11 @@ impl SharedBotState {
 
                 if needs_warmup {
                     let mut lock = state_arc.lock().unwrap();
-                    let warmup_target = cfg.warmup_klines;
+                    let warmup_target = cfg.warmup_klines.clamp(500, 3000);
                     lock.add_log("info", &format!("⏳ Memulai Warm-up Backtest untuk {} (TF: {}, target: {} candle)...", target_symbol, cfg.interval, warmup_target));
                     drop(lock);
 
-                    // Fetch klines sesuai target candle (default 10.000 kline)
+                    // Fetch klines sesuai target candle
                     if let Ok(data) = fetch_binance_fapi_klines_by_count(&target_symbol, &cfg.interval, warmup_target, true, |_| {}) {
                         let bt_res = run_backtest(
                             &data.times,
@@ -422,6 +601,42 @@ impl SharedBotState {
                         let cur_sr = *sr_series.last().unwrap_or(&data.close[data.close.len() - 1]);
                         let cur_vol = *vol_series.last().unwrap_or(&0.0);
 
+                        // Hitung med_h dan med_l dari riwayat S/R step
+                        let mut hi_arr = Vec::new();
+                        let mut lo_arr = Vec::new();
+                        let mut sim_level: Option<f64> = None;
+                        let mut sim_hi: Option<f64> = None;
+                        let mut sim_lo: Option<f64> = None;
+                        for idx in 0..data.close.len() {
+                            let c_sr = sr_series[idx];
+                            let h = data.high[idx];
+                            let l = data.low[idx];
+                            match sim_level {
+                                None => sim_level = Some(c_sr),
+                                Some(curr) if c_sr != curr => {
+                                    if let (Some(sh), Some(sl)) = (sim_hi, sim_lo) {
+                                        if curr != 0.0 {
+                                            hi_arr.push(((sh - curr) / curr * 100.0).max(0.0));
+                                            lo_arr.push(((curr - sl) / curr * 100.0).max(0.0));
+                                        }
+                                    }
+                                    sim_level = Some(c_sr);
+                                    sim_hi = None;
+                                    sim_lo = None;
+                                }
+                                _ => {
+                                    sim_hi = Some(sim_hi.map(|v| v.max(h)).unwrap_or(h));
+                                    sim_lo = Some(sim_lo.map(|v| v.min(l)).unwrap_or(l));
+                                }
+                            }
+                        }
+                        let med_h_raw = median(&hi_arr);
+                        let med_l_raw = median(&lo_arr);
+                        let med_h = if med_h_raw.is_nan() || med_h_raw <= 0.0 { 1.0 } else { med_h_raw };
+                        let med_l = if med_l_raw.is_nan() || med_l_raw <= 0.0 { 1.0 } else { med_l_raw };
+
+                        let sim_cfg = resolve_sim_config(&chosen_strat, &cfg);
+
                         // Atur leverage di Binance Testnet
                         let applied_lev = if cfg.leverage_mode == "auto_max" {
                             get_max_leverage(&target_symbol, &creds.demo_api_key, &creds.demo_secret_key).unwrap_or(cfg.manual_leverage)
@@ -433,18 +648,23 @@ impl SharedBotState {
                         let mut lock = state_arc.lock().unwrap();
                         lock.last_warmup_symbol = target_symbol.clone();
                         lock.last_selected_strategy = chosen_strat.clone();
+                        lock.active_sim = Some(sim_cfg);
                         lock.current_sr = cur_sr;
                         lock.current_vol = cur_vol;
+                        lock.med_h = med_h;
+                        lock.med_l = med_l;
                         lock.active_leverage = applied_lev;
                         lock.add_log(
                             "success",
                             &format!(
-                                "🔥 [WARM-UP SELESAI] {} ({} candle). Juara: {} | Current S/R: {:.2} (Band: {:.2}) | Leverage: {}x",
+                                "🔥 [WARM-UP SELESAI] {} ({} candle). Juara: {} | Current S/R: {:.4} (Band: {:.4}) | MedH: {:.2}% / MedL: {:.2}% | Leverage: {}x",
                                 target_symbol,
                                 data.times.len(),
                                 chosen_strat,
                                 cur_sr,
                                 cur_vol,
+                                med_h,
+                                med_l,
                                 applied_lev
                             ),
                         );
@@ -461,17 +681,12 @@ impl SharedBotState {
         thread::spawn(move || {
             loop {
                 // Tunggu sampai bot running dan target koin sudah warm-up
-                let (is_running, symbol, interval, cfg, cur_sr, _cur_vol, strat, lev) = {
+                let (is_running, symbol, interval) = {
                     let lock = state_arc.lock().unwrap();
                     (
                         lock.config.is_running,
                         lock.last_warmup_symbol.clone(),
                         lock.config.interval.clone(),
-                        lock.config.clone(),
-                        lock.current_sr,
-                        lock.current_vol,
-                        lock.last_selected_strategy.clone(),
-                        lock.active_leverage,
                     )
                 };
 
@@ -485,13 +700,15 @@ impl SharedBotState {
                 let ws_url = format!("wss://fstream.binance.com/ws/{}@kline_{}", stream_sym, interval);
 
                 {
-                    let mut lock = state_arc.lock().unwrap();
-                    let exec_str = match cfg.execution_mode.as_str() {
-                        "pre_close" => format!("Pre-Close Sniping ({}ms sebelum bar close)", cfg.pre_close_buffer_ms),
+                    let lock = state_arc.lock().unwrap();
+                    let exec_str = match lock.config.execution_mode.as_str() {
+                        "pre_close" => format!("Pre-Close Sniping ({}ms sebelum bar close)", lock.config.pre_close_buffer_ms),
                         "realtime_no_lag" => "Realtime No Lag".to_string(),
                         _ => "On Candle Close".to_string(),
                     };
-                    lock.add_log("info", &format!("📡 [WS STREAM CONNECTED] wss://fstream.binance.com/ws/{}@kline_{} | Mode: {}", stream_sym, interval, exec_str));
+                    drop(lock);
+                    let mut lock_write = state_arc.lock().unwrap();
+                    lock_write.add_log("info", &format!("📡 [WS STREAM CONNECTED] wss://fstream.binance.com/ws/{}@kline_{} | Mode: {}", stream_sym, interval, exec_str));
                 }
 
                 match connect(&ws_url) {
@@ -536,21 +753,215 @@ impl SharedBotState {
                                 let t_start = k["t"].as_i64().unwrap_or(0);
                                 let t_close = k["T"].as_i64().unwrap_or(0);
                                 let is_closed = k["x"].as_bool().unwrap_or(false);
+                                let o_px = k["o"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                                let h_px = k["h"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                                let l_px = k["l"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
                                 let c_px = k["c"].as_str().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
                                 let now_ms = Utc::now().timestamp_millis();
                                 let time_left_ms = t_close - now_ms;
 
+                                if c_px <= 0.0 {
+                                    continue;
+                                }
+
                                 let creds = load_credentials();
 
-                                // Evaluasi trigger sniping sesuai execution_mode
-                                let (should_evaluate, is_sniper_trigger) = match cfg.execution_mode.as_str() {
-                                    "pre_close" => {
-                                        let in_snipe_window = time_left_ms <= cfg.pre_close_buffer_ms as i64 && time_left_ms > -3000;
-                                        let lock = state_arc.lock().unwrap();
-                                        let not_evaluated = lock.last_evaluated_bar != t_start;
-                                        (in_snipe_window && not_evaluated, true)
+                                // ========================================================
+                                // 1. INTRABAR POSITION MANAGEMENT (TP, SL, TRAILING STOP ON EVERY TICK)
+                                // ========================================================
+                                let mut trade_to_close: Option<(String, String, f64, String, f64)> = None;
+                                {
+                                    let mut lock = state_arc.lock().unwrap();
+                                    if let Some(ref mut trade) = lock.active_trade {
+                                        if trade.symbol == symbol {
+                                            // Update extreme price
+                                            if trade.side == "BUY" {
+                                                trade.tr_extreme = trade.tr_extreme.max(h_px.max(c_px));
+                                            } else {
+                                                trade.tr_extreme = trade.tr_extreme.min(l_px.min(c_px));
+                                            }
+
+                                            // Trailing Stop Ratchet
+                                            if trade.use_trailing {
+                                                let fav_pct = if trade.side == "BUY" {
+                                                    (trade.tr_extreme - trade.entry_price) / trade.entry_price * 100.0
+                                                } else {
+                                                    (trade.entry_price - trade.tr_extreme) / trade.entry_price * 100.0
+                                                };
+                                                if fav_pct >= trade.tr_act_pct {
+                                                    let new_stop = if trade.side == "BUY" {
+                                                        trade.tr_extreme * (1.0 - trade.tr_dist_pct / 100.0)
+                                                    } else {
+                                                        trade.tr_extreme * (1.0 + trade.tr_dist_pct / 100.0)
+                                                    };
+                                                    trade.tr_stop_price = Some(match trade.tr_stop_price {
+                                                        Some(cur) => if trade.side == "BUY" { cur.max(new_stop) } else { cur.min(new_stop) },
+                                                        None => new_stop,
+                                                    });
+                                                }
+                                            }
+
+                                            // Effective Stop
+                                            let eff_stop = if trade.side == "BUY" {
+                                                match (trade.sl_price, trade.tr_stop_price) {
+                                                    (None, t) => t,
+                                                    (Some(s), None) => Some(s),
+                                                    (Some(s), Some(t)) => Some(s.max(t)),
+                                                }
+                                            } else {
+                                                match (trade.sl_price, trade.tr_stop_price) {
+                                                    (None, t) => t,
+                                                    (Some(s), None) => Some(s),
+                                                    (Some(s), Some(t)) => Some(s.min(t)),
+                                                }
+                                            };
+
+                                            // Check Stop Hit
+                                            let stop_hit = eff_stop.map(|s| {
+                                                if trade.side == "BUY" { l_px <= s || c_px <= s } else { h_px >= s || c_px >= s }
+                                            }).unwrap_or(false);
+
+                                            // Check TP Hit
+                                            let tp_hit = trade.tp_price.map(|tp| {
+                                                if trade.side == "BUY" { h_px >= tp || c_px >= tp } else { l_px <= tp || c_px <= tp }
+                                            }).unwrap_or(false);
+
+                                            if stop_hit {
+                                                let is_tr = trade.tr_stop_price.is_some() && (trade.sl_price.is_none() || (
+                                                    if trade.side == "BUY" { trade.tr_stop_price.unwrap() >= trade.sl_price.unwrap() }
+                                                    else { trade.tr_stop_price.unwrap() <= trade.sl_price.unwrap() }
+                                                ));
+                                                let stop_target = eff_stop.unwrap_or(c_px);
+                                                let why = if is_tr {
+                                                    format!("TRAIL STOP ({:.4})", stop_target)
+                                                } else {
+                                                    format!("STOP LOSS ({:.4})", stop_target)
+                                                };
+                                                trade_to_close = Some((trade.symbol.clone(), trade.side.clone(), trade.quantity, why, c_px));
+                                            } else if tp_hit {
+                                                let why = format!("TAKE PROFIT ({:.4})", trade.tp_price.unwrap_or(c_px));
+                                                trade_to_close = Some((trade.symbol.clone(), trade.side.clone(), trade.quantity, why, c_px));
+                                            }
+                                        }
                                     }
-                                    "realtime_no_lag" => (true, false),
+                                }
+
+                                if let Some((sym, side, qty, why, exit_px)) = trade_to_close {
+                                    let _ = market_close_position(&sym, &side, qty, &creds.demo_api_key, &creds.demo_secret_key);
+                                    let mut lock = state_arc.lock().unwrap();
+                                    let pnl_str = if let Some(ref t) = lock.active_trade {
+                                        let pnl = (if t.side == "BUY" { 1.0 } else { -1.0 }) * t.quantity * (exit_px - t.entry_price);
+                                        format!("(Est. PnL: {:+.2} USDT)", pnl)
+                                    } else {
+                                        String::new()
+                                    };
+                                    lock.active_trade = None;
+                                    lock.add_log("trade", &format!("🏁 [EXIT {}] Menutup posisi {} {} @ {:.4} {}", why, side, sym, exit_px, pnl_str));
+                                }
+
+                                // ========================================================
+                                // 2. CANDLE CLOSE PROCESSING (BAR-BASED TP & SL)
+                                // ========================================================
+                                if is_closed {
+                                    let mut bar_exit: Option<(String, String, f64, String, f64)> = None;
+                                    {
+                                        let mut lock = state_arc.lock().unwrap();
+                                        if let Some(ref mut trade) = lock.active_trade {
+                                            if trade.symbol == symbol {
+                                                trade.bars_held += 1;
+                                                let is_dir = if trade.side == "BUY" { c_px > o_px } else { c_px < o_px };
+                                                let is_adv = if trade.side == "BUY" { c_px < o_px } else { c_px > o_px };
+                                                trade.dir_candle_count = if is_dir { trade.dir_candle_count + 1 } else { 0 };
+                                                trade.adv_candle_count = if is_adv { trade.adv_candle_count + 1 } else { 0 };
+
+                                                let gross_pnl = (if trade.side == "BUY" { 1.0 } else { -1.0 }) * trade.quantity * (c_px - trade.entry_price);
+                                                let is_net_prof = gross_pnl > 0.0;
+                                                let is_in_loss = gross_pnl <= 0.0;
+
+                                                let mut bar_tp_hit = false;
+                                                let mut bar_tp_why = String::new();
+                                                let mut bar_sl_hit = false;
+                                                let mut bar_sl_why = String::new();
+
+                                                if trade.tp_bar_type == 3 && trade.bars_held >= trade.tp_bar_target {
+                                                    bar_tp_hit = true;
+                                                    bar_tp_why = format!("TP BAR ({}b)", trade.bars_held);
+                                                } else if trade.tp_bar_type == 4 && trade.bars_held >= trade.tp_bar_target && is_net_prof {
+                                                    bar_tp_hit = true;
+                                                    bar_tp_why = format!("TP B-PROF ({}b)", trade.bars_held);
+                                                } else if trade.tp_bar_type == 5 && trade.dir_candle_count >= trade.tp_bar_target && is_net_prof {
+                                                    bar_tp_hit = true;
+                                                    bar_tp_why = format!("TP B-DIR ({}c)", trade.dir_candle_count);
+                                                }
+
+                                                if trade.sl_bar_type == 3 && trade.bars_held >= trade.sl_bar_target && is_in_loss {
+                                                    bar_sl_hit = true;
+                                                    bar_sl_why = format!("SL B-LOSS ({}b)", trade.bars_held);
+                                                } else if trade.sl_bar_type == 4 && trade.bars_held >= trade.sl_bar_target {
+                                                    bar_sl_hit = true;
+                                                    bar_sl_why = format!("SL MAX-BAR ({}b)", trade.bars_held);
+                                                } else if trade.sl_bar_type == 5 && trade.adv_candle_count >= trade.sl_bar_target && is_in_loss {
+                                                    bar_sl_hit = true;
+                                                    bar_sl_why = format!("SL B-ADV ({}c)", trade.adv_candle_count);
+                                                }
+
+                                                if bar_sl_hit && trade.sl_bar_type != 4 {
+                                                    bar_exit = Some((trade.symbol.clone(), trade.side.clone(), trade.quantity, bar_sl_why, c_px));
+                                                } else if bar_tp_hit {
+                                                    bar_exit = Some((trade.symbol.clone(), trade.side.clone(), trade.quantity, bar_tp_why, c_px));
+                                                } else if bar_sl_hit {
+                                                    bar_exit = Some((trade.symbol.clone(), trade.side.clone(), trade.quantity, bar_sl_why, c_px));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if let Some((sym, side, qty, why, exit_px)) = bar_exit {
+                                        let _ = market_close_position(&sym, &side, qty, &creds.demo_api_key, &creds.demo_secret_key);
+                                        let mut lock = state_arc.lock().unwrap();
+                                        let pnl_str = if let Some(ref t) = lock.active_trade {
+                                            let pnl = (if t.side == "BUY" { 1.0 } else { -1.0 }) * t.quantity * (exit_px - t.entry_price);
+                                            format!("(Est. PnL: {:+.2} USDT)", pnl)
+                                        } else {
+                                            String::new()
+                                        };
+                                        lock.active_trade = None;
+                                        lock.add_log("trade", &format!("🏁 [EXIT {}] Menutup posisi {} {} @ {:.4} {}", why, side, sym, exit_px, pnl_str));
+                                    }
+                                }
+
+                                // ========================================================
+                                // 3. STEP S/R BREAKOUT DETECTION & PRE-CLOSE SNIPING ENTRY
+                                // ========================================================
+                                let (cur_sr, cur_vol, line_mode, exec_mode, pre_close_buf_ms, active_sim, med_h, med_l, lev, margin_pct, one_way_rule) = {
+                                    let lock = state_arc.lock().unwrap();
+                                    (
+                                        lock.current_sr,
+                                        lock.current_vol,
+                                        lock.config.line_mode.clone(),
+                                        lock.config.execution_mode.clone(),
+                                        lock.config.pre_close_buffer_ms,
+                                        lock.active_sim.clone(),
+                                        lock.med_h,
+                                        lock.med_l,
+                                        lock.active_leverage,
+                                        lock.config.margin_pct_per_slot,
+                                        lock.config.one_way_rule.clone(),
+                                    )
+                                };
+
+                                let is_breakout = cur_vol > 0.0 && cur_sr > 0.0 && (c_px - cur_sr).abs() > cur_vol;
+
+                                let (should_evaluate, is_preclose_trigger) = match exec_mode.as_str() {
+                                    "pre_close" => {
+                                        let in_snipe_window = time_left_ms <= pre_close_buf_ms as i64 && time_left_ms > -3000;
+                                        let lock = state_arc.lock().unwrap();
+                                        (in_snipe_window && lock.last_evaluated_bar != t_start, true)
+                                    }
+                                    "realtime_no_lag" => {
+                                        let lock = state_arc.lock().unwrap();
+                                        (is_breakout && lock.last_evaluated_bar != t_start, false)
+                                    }
                                     _ => {
                                         // on_close
                                         let lock = state_arc.lock().unwrap();
@@ -558,127 +969,190 @@ impl SharedBotState {
                                     }
                                 };
 
-                                if should_evaluate && cur_sr > 0.0 && c_px > 0.0 {
-                                    // Tandai candle ini sudah dievaluasi untuk menghindari order ganda
+                                if should_evaluate {
                                     {
                                         let mut lock = state_arc.lock().unwrap();
                                         lock.last_evaluated_bar = t_start;
                                     }
 
-                                    // Breakout check
-                                    let is_breakout_up = c_px > cur_sr;
-                                    let is_breakout_down = c_px < cur_sr;
-
-                                    let sig_side = if strat.contains("COUNTER") {
-                                        if is_breakout_up { Some("SELL") } else if is_breakout_down { Some("BUY") } else { None }
-                                    } else {
-                                        // TREND
-                                        if is_breakout_up { Some("BUY") } else if is_breakout_down { Some("SELL") } else { None }
-                                    };
-
-                                    if let Some(side) = sig_side {
-                                        let (wallet_bal, existing_pos) = {
-                                            let lock = state_arc.lock().unwrap();
-                                            let bal = lock.cached_balance.as_ref().map(|b| b.wallet_balance).unwrap_or(1000.0);
-                                            let pos = lock.cached_positions.iter().find(|p| p.symbol == symbol).cloned();
-                                            (bal, pos)
+                                    if is_breakout {
+                                        let up_step = c_px > cur_sr;
+                                        let new_sr = if line_mode == "Anchor" {
+                                            c_px
+                                        } else {
+                                            cur_sr + (if up_step { 1.0 } else { -1.0 }) * cur_vol
                                         };
 
-                                        // Terapkan One-Way Rule
-                                        let mut allow_entry = true;
-                                        if let Some(ref pos) = existing_pos {
-                                            if cfg.one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
+                                        {
+                                            let mut lock = state_arc.lock().unwrap();
+                                            let old_sr = lock.current_sr;
+                                            lock.current_sr = new_sr;
+                                            lock.add_log("info", &format!("📈 [S/R STEP BREAKOUT] {} Level S/R bergeser: {:.4} ➔ {:.4} (Band: {:.4})", symbol, old_sr, new_sr, cur_vol));
+                                        }
+
+                                        let sim = active_sim.unwrap_or_else(|| ActiveSimConfig::default_trend());
+                                        let sig_side = match sim.mode {
+                                            1 => if up_step { "BUY" } else { "SELL" },      // TREND
+                                            2 => if up_step { "SELL" } else { "BUY" },      // COUNTER
+                                            _ => if up_step { "BUY" } else { "SELL" },      // HEDGE default
+                                        };
+
+                                        let mut can_open_new = true;
+                                        let existing_pos = {
+                                            let lock = state_arc.lock().unwrap();
+                                            lock.active_trade.clone()
+                                        };
+
+                                        if let Some(ref trade) = existing_pos {
+                                            if trade.sl_next_sr {
+                                                let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
                                                 let mut lock = state_arc.lock().unwrap();
-                                                lock.add_log("info", &format!("🔄 [ONE-WAY] Menutup posisi lama {} {} sebelum entry baru di SR baru.", pos.side, pos.symbol));
-                                                let _ = market_close_position(&pos.symbol, &pos.side, pos.position_amt, &creds.demo_api_key, &creds.demo_secret_key);
-                                            } else if cfg.one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
-                                                if pos.side == side {
+                                                lock.active_trade = None;
+                                                lock.add_log("trade", &format!("🏁 [EXIT NEXT SR] Menutup posisi {} {} karena level SR baru terbentuk.", trade.side, trade.symbol));
+                                            } else if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
+                                                let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
+                                                let mut lock = state_arc.lock().unwrap();
+                                                lock.active_trade = None;
+                                                lock.add_log("info", &format!("🔄 [ONE-WAY] Menutup posisi lama {} {} sebelum membuka posisi baru di SR baru.", trade.side, trade.symbol));
+                                            } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
+                                                if trade.side == sig_side {
                                                     let mut lock = state_arc.lock().unwrap();
-                                                    lock.add_log("info", &format!("🛡️ [ONE-WAY] Sinyal {} searah dengan posisi aktif {}. Posisi dipertahankan (Hold).", side, pos.symbol));
-                                                    allow_entry = false;
+                                                    lock.add_log("info", &format!("🛡️ [ONE-WAY HOLD] Sinyal {} searah dengan posisi aktif. Skip buka baru.", sig_side));
+                                                    can_open_new = false;
                                                 } else {
+                                                    let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
                                                     let mut lock = state_arc.lock().unwrap();
-                                                    lock.add_log("info", &format!("🔄 [ONE-WAY REVERSE] Membalik arah posisi dari {} ke {}.", pos.side, side));
-                                                    let _ = market_close_position(&pos.symbol, &pos.side, pos.position_amt, &creds.demo_api_key, &creds.demo_secret_key);
+                                                    lock.active_trade = None;
+                                                    lock.add_log("info", &format!("🔄 [ONE-WAY REVERSE] Membalik arah posisi dari {} ke {}.", trade.side, sig_side));
                                                 }
                                             } else {
-                                                // Tahan Posisi Lama
+                                                // Tahan Posisi Lama (Skip SR Baru)
                                                 let mut lock = state_arc.lock().unwrap();
-                                                lock.add_log("info", &format!("🛡️ [ONE-WAY SKIP] Posisi {} {} masih terbuka. Melewatkan sinyal baru.", pos.symbol, pos.side));
-                                                allow_entry = false;
+                                                lock.add_log("info", &format!("🛡️ [ONE-WAY SKIP] Posisi {} {} masih terbuka. Melewatkan sinyal baru.", trade.symbol, trade.side));
+                                                can_open_new = false;
                                             }
                                         }
 
-                                        if allow_entry {
-                                            // Hitung ukuran margin dan jumlah koin
-                                            let slot_margin = wallet_bal * (cfg.margin_pct_per_slot / 100.0);
+                                        if can_open_new {
+                                            let wallet_bal = {
+                                                let lock = state_arc.lock().unwrap();
+                                                lock.cached_balance.as_ref().map(|b| b.wallet_balance).unwrap_or(1000.0)
+                                            };
+                                            let slot_margin = wallet_bal * (margin_pct / 100.0);
                                             let notional = slot_margin * (lev as f64);
                                             let raw_qty = notional / c_px;
 
-                                            match market_open_position(&symbol, side, raw_qty, &creds.demo_api_key, &creds.demo_secret_key) {
-                                                Ok((order_id, _actual_qty, qty_str)) => {
-                                                    let mut lock = state_arc.lock().unwrap();
-                                                    lock.position_bars_held = 0;
-                                                    let tag = if is_sniper_trigger {
+                                            match market_open_position(&symbol, sig_side, raw_qty, &creds.demo_api_key, &creds.demo_secret_key) {
+                                                Ok((order_id, actual_qty, qty_str)) => {
+                                                    let dir_f = if sig_side == "BUY" { 1.0 } else { -1.0 };
+                                                    let fav_m = if sig_side == "BUY" { med_h } else { med_l };
+                                                    let adv_m = if sig_side == "BUY" { med_l } else { med_h };
+
+                                                    let tp_p = match sim.tp_t {
+                                                        1 => Some(fav_m * sim.tp_v),
+                                                        2 => Some(sim.tp_v),
+                                                        _ => None,
+                                                    };
+                                                    let tp_px = tp_p.map(|p| c_px * (1.0 + dir_f * p / 100.0));
+
+                                                    let sl_p = match sim.sl_t {
+                                                        1 => Some(adv_m * sim.sl_v),
+                                                        2 => Some(sim.sl_v),
+                                                        _ => None,
+                                                    };
+                                                    let sl_px = sl_p.map(|p| c_px * (1.0 - dir_f * p / 100.0));
+
+                                                    let (use_tr, tr_act_pct, tr_dist_pct) = if sim.use_tr {
+                                                        let a = if sim.tr_u == 1 { fav_m * sim.tr_a } else { sim.tr_a };
+                                                        let d = if sim.tr_u == 1 { fav_m * sim.tr_d } else { sim.tr_d };
+                                                        (true, a, d)
+                                                    } else {
+                                                        (false, 0.0, 0.0)
+                                                    };
+
+                                                    let is_bar_tp = sim.tp_t >= 3;
+                                                    let b_tp_type = if is_bar_tp { sim.tp_t } else { 0 };
+                                                    let b_tp_tgt = if is_bar_tp { sim.tp_v as i32 } else { 0 };
+
+                                                    let is_bar_sl = sim.sl_t >= 3;
+                                                    let b_sl_type = if is_bar_sl { sim.sl_t } else { 0 };
+                                                    let b_sl_tgt = if is_bar_sl { sim.sl_v as i32 } else { 0 };
+
+                                                    let sl_next_sr = sim.sl_t == 0;
+
+                                                    let tp_desc = if let Some(tp) = tp_px {
+                                                        format!("{:.4}", tp)
+                                                    } else if use_tr {
+                                                        format!("Trail({:.2}%/{:.2}%)", tr_act_pct, tr_dist_pct)
+                                                    } else if b_tp_type == 3 {
+                                                        format!("BarFix({}b)", b_tp_tgt)
+                                                    } else if b_tp_type == 4 {
+                                                        format!("BarProf(>={}b)", b_tp_tgt)
+                                                    } else if b_tp_type == 5 {
+                                                        format!("BarDir({}c)", b_tp_tgt)
+                                                    } else {
+                                                        "-".to_string()
+                                                    };
+
+                                                    let sl_desc = if let Some(sl) = sl_px {
+                                                        format!("{:.4}", sl)
+                                                    } else if b_sl_type == 3 {
+                                                        format!("BarLoss(>={}b)", b_sl_tgt)
+                                                    } else if b_sl_type == 4 {
+                                                        format!("MaxBar({}b)", b_sl_tgt)
+                                                    } else if b_sl_type == 5 {
+                                                        format!("BarAdv({}c)", b_sl_tgt)
+                                                    } else {
+                                                        "NextSR".to_string()
+                                                    };
+
+                                                    let new_trade = ActiveTradeState {
+                                                        symbol: symbol.clone(),
+                                                        side: sig_side.to_string(),
+                                                        entry_price: c_px,
+                                                        quantity: actual_qty,
+                                                        entry_time_ms: now_ms,
+                                                        tp_price: tp_px,
+                                                        sl_price: sl_px,
+                                                        tp_desc: tp_desc.clone(),
+                                                        sl_desc: sl_desc.clone(),
+                                                        use_trailing: use_tr,
+                                                        tr_act_pct,
+                                                        tr_dist_pct,
+                                                        tr_extreme: c_px,
+                                                        tr_stop_price: None,
+                                                        tp_bar_type: b_tp_type,
+                                                        tp_bar_target: b_tp_tgt,
+                                                        sl_bar_type: b_sl_type,
+                                                        sl_bar_target: b_sl_tgt,
+                                                        bars_held: 0,
+                                                        dir_candle_count: 0,
+                                                        adv_candle_count: 0,
+                                                        sl_next_sr,
+                                                    };
+
+                                                    let tag = if is_preclose_trigger {
                                                         format!("🎯 [PRE-CLOSE SNIPER (Sisa: {}ms)]", time_left_ms)
                                                     } else {
-                                                        "⚡ [SIGNAL EXECUTED]".to_string()
+                                                        "⚡ [SR BREAKOUT EXECUTED]".to_string()
                                                     };
+
+                                                    let mut lock = state_arc.lock().unwrap();
+                                                    lock.active_trade = Some(new_trade);
+                                                    lock.position_bars_held = 0;
                                                     lock.add_log(
                                                         "trade",
                                                         &format!(
-                                                            "{} Order #{} {} {} {} @ {:.2} BERHASIL! | Lev: {}x | Margin: {:.2} USDT | Strategi: {}",
-                                                            tag, order_id, side, qty_str, symbol, c_px, lev, slot_margin, strat
+                                                            "{} Order #{} {} {} {} @ {:.4} BERHASIL! | Lev: {}x | TP: {} | SL: {} | Strategi: {}",
+                                                            tag, order_id, sig_side, qty_str, symbol, c_px, lev, tp_desc, sl_desc, sim.key
                                                         ),
                                                     );
                                                 }
                                                 Err(e) => {
                                                     let mut lock = state_arc.lock().unwrap();
-                                                    lock.add_log("error", &format!("❌ Gagal eksekusi order {} {}: {}", side, symbol, e));
+                                                    lock.add_log("error", &format!("❌ Gagal eksekusi order {} {}: {}", sig_side, symbol, e));
                                                 }
                                             }
-                                        }
-                                    }
-                                }
-
-                                // 3. Pada candle penutupan (is_closed == true)
-                                if is_closed {
-                                    let mut lock = state_arc.lock().unwrap();
-                                    // Update S/R level untuk candle berikutnya
-                                    if (c_px - lock.current_sr).abs() > lock.current_vol && lock.current_vol > 0.0 {
-                                        let old_sr = lock.current_sr;
-                                        let new_sr = if lock.config.line_mode == "Anchor" {
-                                            c_px
-                                        } else {
-                                            lock.current_sr + (if c_px > lock.current_sr { 1.0 } else { -1.0 }) * lock.current_vol
-                                        };
-                                        lock.current_sr = new_sr;
-                                        lock.add_log("info", &format!("📈 [S/R UPDATED] {} Garis S/R bergeser: {:.2} ➔ {:.2}", symbol, old_sr, new_sr));
-                                    }
-
-                                    // Cek Bar-Based TP dan SL untuk posisi terbuka
-                                    lock.position_bars_held += 1;
-                                    let bars_held = lock.position_bars_held;
-
-                                    if let Some(pos) = lock.cached_positions.iter().find(|p| p.symbol == symbol).cloned() {
-                                        let mut trigger_close = false;
-                                        let mut reason = String::new();
-
-                                        let target_tp_bar = if strat.contains("B2") { lock.config.bar_tp2 } else if strat.contains("B1") { lock.config.bar_tp1 } else if strat.contains("BD") { lock.config.bar_tp_dir } else { 0 };
-                                        let target_sl_bar = if strat.contains("S2") { lock.config.sl_bar2 } else if strat.contains("S1") { lock.config.sl_bar1 } else if strat.contains("SA") { lock.config.sl_bar_adv } else { 0 };
-
-                                        if target_tp_bar > 0 && bars_held >= target_tp_bar && pos.unrealized_profit > 0.0 {
-                                            trigger_close = true;
-                                            reason = format!("TP BAR ({}b)", bars_held);
-                                        } else if target_sl_bar > 0 && bars_held >= target_sl_bar {
-                                            trigger_close = true;
-                                            reason = format!("SL BAR ({}b)", bars_held);
-                                        }
-
-                                        if trigger_close {
-                                            lock.add_log("trade", &format!("🏁 [EXIT {}] Menutup posisi {} {} (PnL: {:.2} USDT)...", reason, pos.side, pos.symbol, pos.unrealized_profit));
-                                            let _ = market_close_position(&pos.symbol, &pos.side, pos.position_amt, &creds.demo_api_key, &creds.demo_secret_key);
-                                            lock.position_bars_held = 0;
                                         }
                                     }
                                 }

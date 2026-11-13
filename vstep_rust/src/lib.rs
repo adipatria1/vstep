@@ -367,6 +367,11 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
                 "balance": lock.cached_balance,
                 "positions": lock.cached_positions,
                 "logs": lock.logs,
+                "active_trade": lock.active_trade,
+                "current_sr": lock.current_sr,
+                "current_vol": lock.current_vol,
+                "strategy": lock.last_selected_strategy,
+                "warmup_symbol": lock.last_warmup_symbol,
             });
             let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
             let _ = request.respond(Response::from_string(res.to_string()).with_header(header));
@@ -431,6 +436,14 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
             let creds = load_credentials();
             match market_close_position(sym, side, qty, &creds.demo_api_key, &creds.demo_secret_key) {
                 Ok(msg) => {
+                    {
+                        let mut lock = state.bot.0.lock().unwrap();
+                        if let Some(ref trade) = lock.active_trade {
+                            if trade.symbol == sym {
+                                lock.active_trade = None;
+                            }
+                        }
+                    }
                     let ok = serde_json::json!({"status": "ok", "message": msg});
                     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
                     let _ = request.respond(Response::from_string(ok.to_string()).with_header(header));

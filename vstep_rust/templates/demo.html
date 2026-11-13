@@ -454,7 +454,7 @@
                         }
 
                         // 3. Live Positions
-                        renderPositions(data.positions || []);
+                        renderPositions(data.positions || [], data.active_trade, data.current_sr, data.current_vol, data.strategy, data.warmup_symbol);
 
                         // 4. Terminal Logs
                         renderLogs(data.logs || []);
@@ -462,16 +462,27 @@
                     .catch(err => console.error('Poll error:', err));
             }
 
-            function renderPositions(positions) {
+            function renderPositions(positions, activeTrade, currentSr, currentVol, strategy, targetSymbol) {
                 posCountBadge.textContent = `${positions.length}`;
 
                 // Mobile Cards View
                 if (livePosCards) {
                     if (!positions || positions.length === 0) {
+                        let statusInfo = '';
+                        if (targetSymbol && currentSr > 0) {
+                            statusInfo = `
+                                <div style="margin-top: 12px; font-size: 11px; text-align: left; background: rgba(41, 98, 255, 0.08); border: 1px solid rgba(41, 98, 255, 0.2); border-radius: 6px; padding: 10px;">
+                                    <div style="color: var(--accent-blue); font-weight: 700; margin-bottom: 4px;">📡 Live Kline Monitoring:</div>
+                                    <div>Koin: <strong>${targetSymbol}</strong> | S/R Aktif: <strong>${currentSr.toFixed(4)}</strong> (Band: ±${currentVol.toFixed(4)})</div>
+                                    <div style="color: var(--text-dim); margin-top: 2px;">Strategi: <strong>${strategy || 'Auto Winner'}</strong></div>
+                                </div>
+                            `;
+                        }
                         livePosCards.innerHTML = `
-                            <div style="text-align: center; padding: 36px 12px; color: var(--text-dim); background: #151924; border-radius: 10px; border: 1px solid var(--border-color);">
+                            <div style="text-align: center; padding: 24px 12px; color: var(--text-dim); background: #151924; border-radius: 10px; border: 1px solid var(--border-color);">
                                 Belum ada posisi terbuka saat ini.<br>
-                                <small>Bot akan otomatis membuka posisi begitu sinyal Pre-Close Sniper atau SR Cross muncul.</small>
+                                <small>Bot streaming live kline & menunggu validasi Step S/R Breakout.</small>
+                                ${statusInfo}
                             </div>
                         `;
                     } else {
@@ -484,6 +495,18 @@
                             const sideTag = isLong ? 'LONG' : 'SHORT';
                             const sideClass = isLong ? 'pos-side-long' : 'pos-side-short';
                             const pnlClass = (p.unrealized_profit >= 0) ? 'val-good' : 'val-bad';
+
+                            let targetsHtml = '';
+                            if (activeTrade && activeTrade.symbol === p.symbol) {
+                                targetsHtml = `
+                                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color); font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                                        <div><span style="color: var(--good-green);">TP Target:</span> <strong>${activeTrade.tp_desc}</strong></div>
+                                        <div><span style="color: var(--bad-red);">SL Target:</span> <strong>${activeTrade.sl_desc}</strong></div>
+                                        <div><span style="color: var(--text-dim);">Bars Held:</span> <strong>${activeTrade.bars_held} bar</strong></div>
+                                        <div><span style="color: var(--text-dim);">Candle (D/A):</span> <strong>${activeTrade.dir_candle_count}c / ${activeTrade.adv_candle_count}c</strong></div>
+                                    </div>
+                                `;
+                            }
 
                             card.innerHTML = `
                                 <div class="pos-card-head">
@@ -501,6 +524,7 @@
                                     <div><span style="color: var(--text-dim);">Jumlah:</span> <strong>${p.position_amt}</strong></div>
                                     <div><span style="color: var(--text-dim);">Margin:</span> <strong>${p.margin_used} USDT</strong></div>
                                 </div>
+                                ${targetsHtml}
                                 <button type="button" class="btn-close-pos btn-close-one" data-sym="${p.symbol}" data-side="${p.side}" data-qty="${p.position_amt}">
                                     ✕ Tutup Posisi (Market Close)
                                 </button>
