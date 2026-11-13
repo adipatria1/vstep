@@ -5,7 +5,7 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Memungkinkan tombol "Run workflow" manual di tab Actions GitHub
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,19 +22,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK for Easy Download
         run: |
           mkdir -p output-apk
-          cp app/build/outputs/apk/debug/*.apk output-apk/VolStepTerminal-debug.apk || true
+          cp app/build/outputs/apk/debug/*.apk output-apk/VolStepTerminal-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
