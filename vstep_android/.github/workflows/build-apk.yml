@@ -22,14 +22,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Build APK with Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      - name: Grant Execute Permission for Gradlew
-        run: chmod +x gradlew
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        with:
+          gradle-version: '8.5'
+          arguments: assembleDebug --stacktrace
 
       - name: Rename APK for Easy Download
         run: |
