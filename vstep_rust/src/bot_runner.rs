@@ -35,9 +35,13 @@ pub struct BotConfig {
     pub pre_close_buffer_ms: u64,   // 1000 ms
 
     // 2. Mode Koin & Screener
+    #[serde(alias = "screener_source")]
     pub coin_mode: String,          // "top_gainers", "top_volume", "manual"
+    #[serde(alias = "manual_symbols")]
     pub manual_symbol: String,      // "BTCUSDT"
+    #[serde(alias = "timeframe")]
     pub interval: String,           // "15m", "1h", etc.
+    #[serde(alias = "max_coins")]
     pub max_active_slots: usize,    // 5 slot
     pub warmup_klines: usize,       // 10000 kline default
 
@@ -178,6 +182,11 @@ impl SharedBotState {
     pub fn start(&self, new_cfg: BotConfig) -> Result<(), String> {
         let creds = load_credentials();
         if creds.demo_api_key.trim().is_empty() || creds.demo_secret_key.trim().is_empty() {
+            let mut lock = self.0.lock().unwrap();
+            lock.add_log(
+                "error",
+                "❌ Gagal menyalakan bot: Kredensial API Key / Secret Key Demo belum diisi di menu Setting! Buka menu Setting (ikon gear) untuk memasukkan kunci Binance Testnet.",
+            );
             return Err("Kredensial API Key / Secret Key Demo belum diisi di menu Setting!".to_string());
         }
 
@@ -231,7 +240,14 @@ impl SharedBotState {
                 );
                 Ok(())
             }
-            Err(e) => Err(format!("Gagal menghubungkan ke Binance Testnet: {}", e)),
+            Err(e) => {
+                let mut lock = self.0.lock().unwrap();
+                lock.add_log(
+                    "error",
+                    &format!("❌ Gagal menghubungkan ke Binance Testnet: {}", e),
+                );
+                Err(format!("Gagal menghubungkan ke Binance Testnet: {}", e))
+            }
         }
     }
 

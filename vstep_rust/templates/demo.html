@@ -567,29 +567,53 @@
                 });
             }
 
-            let seenLogsCount = 0;
+            let seenLogsCount = -1;
             function renderLogs(logs) {
-                if (!logs || logs.length === 0) return;
+                if (!logs || logs.length === 0) {
+                    terminalLogBox.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 24px;">[Belum ada aktivitas log. Klik START DEMO BOT untuk memulai]</div>';
+                    return;
+                }
                 if (logs.length !== seenLogsCount) {
                     seenLogsCount = logs.length;
                     terminalLogBox.innerHTML = '';
-                    logs.forEach(line => {
+                    logs.forEach(item => {
                         const div = document.createElement('div');
-                        if (line.includes('[ENTRY]')) {
+                        div.style.marginBottom = '4px';
+                        div.style.lineHeight = '1.4';
+                        div.style.wordBreak = 'break-word';
+
+                        let text = '';
+                        let level = 'info';
+                        let time = '';
+
+                        if (typeof item === 'string') {
+                            text = item;
+                        } else if (item && typeof item === 'object') {
+                            level = item.level || 'info';
+                            time = item.time || '';
+                            text = item.message || '';
+                        }
+
+                        const displayText = time ? `[${time}] ${text}` : text;
+                        const upper = displayText.toUpperCase();
+
+                        if (upper.includes('[ENTRY]') || level === 'trade') {
                             div.style.color = 'var(--good-green)';
                             div.style.fontWeight = '700';
-                        } else if (line.includes('[TP]') || line.includes('[CLOSE]')) {
+                        } else if (upper.includes('[TP]') || upper.includes('[CLOSE]') || level === 'success' || upper.includes('DIAKTIFKAN') || upper.includes('SELESAI')) {
                             div.style.color = 'var(--highlight-gold)';
                             div.style.fontWeight = '700';
-                        } else if (line.includes('[SL]') || line.includes('[ERROR]') || line.includes('[PANIC]')) {
+                        } else if (upper.includes('[SL]') || upper.includes('[ERROR]') || upper.includes('[PANIC]') || level === 'error' || upper.includes('GAGAL') || upper.includes('❌') || upper.includes('⚠️')) {
                             div.style.color = 'var(--bad-red)';
                             div.style.fontWeight = '700';
-                        } else if (line.includes('[SNIPER]')) {
+                        } else if (upper.includes('[SNIPER]') || upper.includes('[WARM-UP]') || upper.includes('🔥') || upper.includes('🔍') || upper.includes('📊')) {
                             div.style.color = '#58a6ff';
+                            div.style.fontWeight = '600';
                         } else {
                             div.style.color = '#c9d1d9';
                         }
-                        div.textContent = line;
+
+                        div.textContent = displayText;
                         terminalLogBox.appendChild(div);
                     });
                     terminalLogBox.scrollTop = terminalLogBox.scrollHeight;
@@ -600,13 +624,23 @@
             btnToggleBot.addEventListener('click', () => {
                 if (!isRunning) {
                     // Start Bot
+                    const isManualCoin = (coinMode.value === 'manual');
+                    const screenerSource = document.getElementById('screener_source').value;
+                    const manualSymbolsVal = document.getElementById('manual_symbols').value;
+                    const firstSymbol = manualSymbolsVal.split(',')[0].trim().toUpperCase() || 'BTCUSDT';
+                    const timeframe = document.getElementById('timeframe').value;
+                    const maxCoins = parseInt(document.getElementById('max_coins').value, 10) || 5;
+
                     const cfg = {
                         is_running: true,
-                        coin_mode: coinMode.value,
-                        manual_symbols: document.getElementById('manual_symbols').value.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0),
-                        screener_source: document.getElementById('screener_source').value,
-                        max_coins: parseInt(document.getElementById('max_coins').value, 10),
-                        timeframe: document.getElementById('timeframe').value,
+                        coin_mode: isManualCoin ? 'manual' : screenerSource,
+                        screener_source: screenerSource,
+                        manual_symbol: firstSymbol,
+                        manual_symbols: manualSymbolsVal.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0),
+                        max_active_slots: maxCoins,
+                        max_coins: maxCoins,
+                        interval: timeframe,
+                        timeframe: timeframe,
                         line_mode: document.getElementById('line_mode').value,
                         volatility_type: document.getElementById('volatility_type').value,
                         volatility_length: parseInt(document.getElementById('volatility_length').value, 10) || 200,
@@ -631,17 +665,23 @@
                     })
                     .then(res => res.json())
                     .then(data => {
-                        if (data.status === 'ok') {
-                            pollBotState();
-                        } else {
+                        pollBotState();
+                        if (data.status !== 'ok') {
                             alert('Gagal menyalakan bot: ' + data.message);
                         }
+                    })
+                    .catch(err => {
+                        alert('Koneksi terputus: ' + err.message);
+                        pollBotState();
                     });
                 } else {
                     // Stop Bot
                     fetch('/api/demo/stop', { method: 'POST' })
                     .then(res => res.json())
                     .then(data => {
+                        pollBotState();
+                    })
+                    .catch(err => {
                         pollBotState();
                     });
                 }
