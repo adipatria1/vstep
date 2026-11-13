@@ -14,6 +14,7 @@ use tiny_http::{Header, Method, Response, Server};
 use url::Url;
 
 static BASE_DATA_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
+static BASE_CACHE_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 static ENGINE_STARTED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_data_dir<P: AsRef<Path>>(dir: P) {
@@ -29,6 +30,21 @@ pub fn get_data_dir() -> PathBuf {
         }
     }
     PathBuf::from(".")
+}
+
+pub fn set_cache_dir<P: AsRef<Path>>(dir: P) {
+    if let Ok(mut guard) = BASE_CACHE_DIR.write() {
+        *guard = Some(dir.as_ref().to_path_buf());
+    }
+}
+
+pub fn get_cache_dir() -> PathBuf {
+    if let Ok(guard) = BASE_CACHE_DIR.read() {
+        if let Some(ref path) = *guard {
+            return path.clone();
+        }
+    }
+    get_data_dir().join("cache")
 }
 
 use binance_api::{
@@ -310,6 +326,61 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
                     let _ = request.respond(Response::from_string(res.to_string()).with_header(header));
                 }
             }
+        }
+
+        // ========================================================
+        // API CACHE MANAGEMENT
+        // ========================================================
+        (&Method::Get, "/api/cache/info") => {
+            let dir = get_cache_dir();
+            let mut count = 0;
+            let mut total_bytes: u64 = 0;
+            if dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(meta) = entry.metadata() {
+                            if meta.is_file() {
+                                count += 1;
+                                total_bytes += meta.len();
+                            }
+                        }
+                    }
+                }
+            }
+            let mb = (total_bytes as f64) / (1024.0 * 1024.0);
+            let res = serde_json::json!({
+                "status": "ok",
+                "count": count,
+                "total_bytes": total_bytes,
+                "size_formatted": format!("{:.2} MB", mb)
+            });
+            let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+            let _ = request.respond(Response::from_string(res.to_string()).with_header(header));
+        }
+
+        (&Method::Post, "/api/cache/clear") => {
+            let dir = get_cache_dir();
+            let mut deleted_count = 0;
+            if dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(meta) = entry.metadata() {
+                            if meta.is_file() {
+                                if std::fs::remove_file(entry.path()).is_ok() {
+                                    deleted_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let res = serde_json::json!({
+                "status": "ok",
+                "message": format!("{} file cache kline berhasil dibersihkan", deleted_count),
+                "deleted_count": deleted_count
+            });
+            let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+            let _ = request.respond(Response::from_string(res.to_string()).with_header(header));
         }
 
         // ========================================================
@@ -719,11 +790,18 @@ pub extern "system" fn Java_com_volstep_terminal_MainActivity_startNativeEngine(
     _class: jni::objects::JClass,
     port: jni::sys::jint,
     data_dir: jni::objects::JString,
+    cache_dir: jni::objects::JString,
 ) -> jni::sys::jint {
     if let Ok(s) = env.get_string(&data_dir) {
         let path_str: String = s.into();
         if !path_str.trim().is_empty() {
             set_data_dir(path_str);
+        }
+    }
+    if let Ok(s) = env.get_string(&cache_dir) {
+        let path_str: String = s.into();
+        if !path_str.trim().is_empty() {
+            set_cache_dir(path_str);
         }
     }
 

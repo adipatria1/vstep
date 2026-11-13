@@ -51,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private external fun startNativeEngine(port: Int, dataDir: String): Int
+    private external fun startNativeEngine(port: Int, dataDir: String, cacheDir: String): Int
     private external fun isNativeEngineRunning(): Int
 
     private lateinit var binding: ActivityMainBinding
@@ -86,8 +86,9 @@ class MainActivity : AppCompatActivity() {
     private fun startEmbeddedEngineIfAvailable() {
         try {
             val appDataDir = filesDir.absolutePath
-            val res = startNativeEngine(5050, appDataDir)
-            Log.i(TAG, "Native Rust engine started with code $res in dir: $appDataDir")
+            val appCacheDir = cacheDir.absolutePath
+            val res = startNativeEngine(5050, appDataDir, appCacheDir)
+            Log.i(TAG, "Native Rust engine started with code $res in dir: $appDataDir, cacheDir: $appCacheDir")
         } catch (e: Throwable) {
             Log.w(TAG, "Native engine call skipped/failed: ${e.message}")
         }

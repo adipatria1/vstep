@@ -88,6 +88,29 @@
                     <input type="password" id="real_secret_key" placeholder="(Opsional) Masukkan Real Secret Key..." style="width: 100%; font-family: var(--font-mono);">
                 </div>
             </div>
+
+            <!-- Section Manajemen Cache Data Kline -->
+            <div class="card form-section" style="padding: 20px;">
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <h2 style="font-size: 16px; color: var(--text-white);">3. Manajemen Cache Data Kline</h2>
+                    <p style="font-size: 12px; color: var(--text-dim);">Data candlestick disimpan agar proses backtest instan tanpa download ulang. Anda dapat membersihkannya kapan saja jika memori ingin dikosongkan.</p>
+                </div>
+
+                <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-dark); padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 2px;">Total File Tersimpan: <strong id="cache-count" style="color: var(--highlight-gold); font-family: var(--font-mono);">-</strong></div>
+                        <div style="font-size: 12px; color: var(--text-dim);">Ukuran Penyimpanan: <strong id="cache-size" style="color: var(--highlight-gold); font-family: var(--font-mono);">-</strong></div>
+                    </div>
+                    <button type="button" id="btn-refresh-cache" class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px;">
+                        🔄 Cek Ukuran
+                    </button>
+                </div>
+
+                <button type="button" id="btn-clear-cache" class="btn" style="width: 100%; background: rgba(242, 54, 69, 0.15); border: 1px solid var(--bad-red); color: var(--bad-red); font-weight: 600;">
+                    🗑️ Hapus Semua Cache Kline
+                </button>
+                <div id="cache-clear-msg" style="display: none; font-size: 12px; color: var(--good-green); text-align: center; margin-top: 10px;"></div>
+            </div>
         </main>
     </div>
 
@@ -209,6 +232,57 @@
                     testResultTitle.textContent = '❌ ERROR JARINGAN';
                     testResultDesc.textContent = err.message;
                 });
+            });
+
+            // Cache Management
+            const cacheCount = document.getElementById('cache-count');
+            const cacheSize = document.getElementById('cache-size');
+            const btnRefreshCache = document.getElementById('btn-refresh-cache');
+            const btnClearCache = document.getElementById('btn-clear-cache');
+            const cacheClearMsg = document.getElementById('cache-clear-msg');
+
+            function refreshCacheInfo() {
+                fetch('/api/cache/info')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'ok') {
+                            cacheCount.textContent = data.count + ' file';
+                            cacheSize.textContent = data.size_formatted;
+                        }
+                    })
+                    .catch(err => console.error('Gagal mengambil info cache:', err));
+            }
+
+            refreshCacheInfo();
+
+            btnRefreshCache.addEventListener('click', refreshCacheInfo);
+
+            btnClearCache.addEventListener('click', () => {
+                if (!confirm('Yakin ingin menghapus seluruh cache data kline? Anda perlu fetch ulang saat backtest berikutnya.')) {
+                    return;
+                }
+                btnClearCache.disabled = true;
+                btnClearCache.textContent = '⏳ Membersihkan cache...';
+
+                fetch('/api/cache/clear', { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        btnClearCache.disabled = false;
+                        btnClearCache.textContent = '🗑️ Hapus Semua Cache Kline';
+                        if (data.status === 'ok') {
+                            cacheClearMsg.textContent = '✓ ' + data.message;
+                            cacheClearMsg.style.display = 'block';
+                            refreshCacheInfo();
+                            setTimeout(() => { cacheClearMsg.style.display = 'none'; }, 4000);
+                        } else {
+                            alert('Gagal membersihkan cache: ' + data.message);
+                        }
+                    })
+                    .catch(err => {
+                        btnClearCache.disabled = false;
+                        btnClearCache.textContent = '🗑️ Hapus Semua Cache Kline';
+                        alert('Error: ' + err.message);
+                    });
             });
         });
     </script>
