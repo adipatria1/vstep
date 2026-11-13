@@ -259,19 +259,20 @@
                 <!-- Section 4: Leverage & Alokasi Modal -->
                 <div class="card form-section" style="padding: 16px;">
                     <div class="section-header"><h3>4. Leverage & Alokasi Modal</h3></div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="leverage_mode">Mode Leverage</label>
-                            <select id="leverage_mode" name="leverage_mode">
-                                <option value="auto_max" selected>Auto Max Leverage</option>
-                                <option value="manual">Manual Leverage</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="manual_leverage">Leverage Manual (x)</label>
-                            <input type="number" id="manual_leverage" name="manual_leverage" value="10" min="1" max="125">
-                        </div>
+                    <div class="form-group">
+                        <label for="leverage_mode">Mode Leverage</label>
+                        <select id="leverage_mode" name="leverage_mode">
+                            <option value="auto_max" selected>Auto Max Leverage (Maksimal Simbol Otomatis)</option>
+                            <option value="manual">Manual Leverage (Tentukan Sendiri)</option>
+                        </select>
                     </div>
+
+                    <div class="form-group" id="manual-leverage-group" style="display: none;">
+                        <label for="manual_leverage">Leverage Manual (x)</label>
+                        <input type="number" id="manual_leverage" name="manual_leverage" value="10" min="1" max="125">
+                        <small class="helper-text">Leverage seragam untuk semua posisi yang dibuka oleh bot.</small>
+                    </div>
+
                     <div class="form-group">
                         <label for="margin_pct_per_slot">Margin per Slot Posisi (%)</label>
                         <input type="number" id="margin_pct_per_slot" name="margin_pct_per_slot" value="4.0" step="0.5" min="0.5" max="50">
@@ -326,6 +327,8 @@
             const executionMode = document.getElementById('execution_mode');
             const preCloseBufferGroup = document.getElementById('pre-close-buffer-group');
             const execHelperText = document.getElementById('exec-helper-text');
+            const leverageMode = document.getElementById('leverage_mode');
+            const manualLeverageGroup = document.getElementById('manual-leverage-group');
 
             // Load 105 Strategy Keys dynamically
             function loadStrategyKeys() {
@@ -372,6 +375,15 @@
             }
             coinMode.addEventListener('change', syncCoinModeUI);
             syncCoinModeUI();
+
+            function syncLeverageModeUI() {
+                const isManual = (leverageMode.value === 'manual');
+                if (manualLeverageGroup) {
+                    manualLeverageGroup.style.display = isManual ? 'block' : 'none';
+                }
+            }
+            leverageMode.addEventListener('change', syncLeverageModeUI);
+            syncLeverageModeUI();
 
             strategyMode.addEventListener('change', () => {
                 manualStratGroup.style.display = (strategyMode.value === 'manual') ? 'block' : 'none';
@@ -606,7 +618,7 @@
                         min_levels: parseInt(document.getElementById('min_levels').value, 10),
                         one_way_rule: document.getElementById('one_way_rule').value,
                         leverage_mode: document.getElementById('leverage_mode').value,
-                        manual_leverage: parseInt(document.getElementById('manual_leverage').value, 10),
+                        manual_leverage: parseInt(document.getElementById('manual_leverage').value, 10) || 10,
                         margin_pct_per_slot: parseFloat(document.getElementById('margin_pct_per_slot').value),
                         execution_mode: executionMode.value,
                         pre_close_buffer_ms: parseInt(document.getElementById('pre_close_buffer_ms').value, 10)
