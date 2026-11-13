@@ -1,0 +1,19 @@
+# Rust
+vstep_rust/target/
+target/
+**/*.rs.bk
+
+# Cache & Local Credentials
+cache/
+config/credentials.json
+vstep_rust/config/credentials.json
+
+# Android Studio / Gradle
+.gradle/
+**/build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+.DS_Store

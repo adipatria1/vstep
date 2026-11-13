@@ -1,0 +1,4 @@
+/target
+config/credentials.json
+*.key
+.env

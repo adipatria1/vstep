@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VolStep Terminal</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_backtest">Strategy</string>
+    <string name="nav_demo">Demo Bot</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="server_settings_title">Pengaturan Server Bot</string>
+    <string name="server_url_hint">http://192.168.1.xxx:5050</string>
+    <string name="server_dialog_desc">Masukkan alamat IP atau domain server bot VolStep Anda (PC lokal atau VPS):</string>
+    <string name="btn_save">Simpan &amp; Hubungkan</string>
+    <string name="btn_cancel">Batal</string>
+    <string name="btn_test">Tes Koneksi</string>
+
+    <string name="notif_channel_name">Aktivitas Trading VolStep</string>
+    <string name="notif_channel_desc">Notifikasi real-time saat sinyal sniper atau order dieksekusi</string>
+</resources>

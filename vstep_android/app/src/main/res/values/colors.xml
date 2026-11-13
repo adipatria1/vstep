@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Trading Palette matching VolStep Web -->
+    <color name="bg_primary">#0b0e14</color>
+    <color name="bg_secondary">#12161f</color>
+    <color name="bg_card">#161b22</color>
+    <color name="border_color">#262c36</color>
+
+    <color name="accent_cyan">#00f2fe</color>
+    <color name="accent_blue">#4facfe</color>
+    <color name="good_green">#27c93f</color>
+    <color name="bad_red">#f23645</color>
+    <color name="warn_yellow">#ffbd2e</color>
+
+    <color name="text_main">#e6edf3</color>
+    <color name="text_muted">#8b949e</color>
+    <color name="text_highlight">#00f2fe</color>
+
+    <color name="nav_active">#00f2fe</color>
+    <color name="nav_inactive">#8b949e</color>
+</resources>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VolStep Futures Terminal - Menu Utama</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#12161f">
+</head>
+<body class="dark-theme home-page">
+    <div class="phone-wrapper">
+        <!-- Top Status Bar (Phone style) -->
+        <div class="phone-status-bar">
+            <span class="status-time" id="live-clock">12:00</span>
+            <div class="status-icons">
+                <span class="net-icon">●●●●</span>
+                <span class="wifi-icon">WiFi</span>
+                <span class="bat-icon">100%</span>
+            </div>
+        </div>
+
+        <!-- Terminal Header -->
+        <header class="home-header">
+            <div class="home-brand">
+                <div class="brand-badge-container">
+                    <span class="logo-badge">PRO v2.0</span>
+                    <span class="pulse-dot"></span>
+                </div>
+                <h1 class="brand-title">VOLSTEP TERMINAL</h1>
+                <p class="brand-subtitle">Binance Futures Algorithmic Cross Margin System</p>
+            </div>
+        </header>
+
+        <!-- 4 Grid Boxes (Phone App Tiles) -->
+        <main class="apps-grid-container">
+            <!-- Box 1: Backtest -->
+            <a href="/backtest" class="app-card active-card">
+                <div class="app-card-glow"></div>
+                <div class="app-card-inner">
+                    <div class="app-icon-wrapper icon-blue">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="app-info">
+                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
+                        <h2 class="app-title">1. Backtest Strategy</h2>
+                        <p class="app-desc">Simulator 105 strategi Binance Futures Cross Margin, Step S/R, Multi-lookback, Base Bar (TP/SL) & Leaderboard.</p>
+                    </div>
+                    <div class="app-arrow">➔</div>
+                </div>
+            </a>
+
+            <!-- Box 2: Demo Binance -->
+            <a href="/demo" class="app-card active-card">
+                <div class="app-card-glow"></div>
+                <div class="app-card-inner">
+                    <div class="app-icon-wrapper icon-amber">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 2v7.31L4.62 18.2A2 2 0 0 0 6.31 21h11.38a2 2 0 0 0 1.69-2.8L14 9.31V2h-4z"></path>
+                            <line x1="8.5" y1="2" x2="15.5" y2="2"></line>
+                        </svg>
+                    </div>
+                    <div class="app-info">
+                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
+                        <h2 class="app-title">2. Demo Binance</h2>
+                        <p class="app-desc">Bot otomatis Testnet: Auto-screener Top Gainers/Volume, Auto Max Leverage, Live Position & Terminal Log.</p>
+                    </div>
+                    <div class="app-arrow">➔</div>
+                </div>
+            </a>
+
+            <!-- Box 3: Real Akun Binance -->
+            <a href="/real" class="app-card standby-card">
+                <div class="app-card-inner">
+                    <div class="app-icon-wrapper icon-emerald">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                        </svg>
+                    </div>
+                    <div class="app-info">
+                        <span class="app-tag tag-standby">SEGERA HADIR</span>
+                        <h2 class="app-title">3. Real Akun Binance</h2>
+                        <p class="app-desc">Eksekusi otomatis posisi riil di Binance Futures USDT-M dengan margin protection.</p>
+                    </div>
+                    <div class="app-arrow lock">🔒</div>
+                </div>
+            </a>
+
+            <!-- Box 4: Setting API Binance -->
+            <a href="/settings" class="app-card active-card">
+                <div class="app-card-glow"></div>
+                <div class="app-card-inner">
+                    <div class="app-icon-wrapper icon-purple">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </div>
+                    <div class="app-info">
+                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
+                        <h2 class="app-title">4. Setting API Binance</h2>
+                        <p class="app-desc">Simpan aman API Key & Secret di config/credentials.json lokal dan uji koneksi Testnet.</p>
+                    </div>
+                    <div class="app-arrow">➔</div>
+                </div>
+            </a>
+        </main>
+
+        <!-- Phone Footer Navigation -->
+        <footer class="home-footer">
+            <span class="footer-text">VolStep High-Speed Algorithmic Trading Suite</span>
+            <span class="footer-sub">Optimized for Ultra-Low RAM & Realtime Binance FAPI</span>
+        </footer>
+    </div>
+
+    <script>
+        // Update live clock
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('live-clock').textContent = `${h}:${m}`;
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setting API Binance - VolStep Terminal</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <header class="app-header">
+        <div class="header-brand">
+            <a href="/" class="btn-back-home" title="Kembali ke Menu Utama">← Menu</a>
+            <span class="logo-badge">PRO v2.0</span>
+            <h1>Setting API Binance <span class="sub-title">Kredensial Demo (Testnet) & Akun Riil</span></h1>
+        </div>
+        <div class="header-status">
+            <span id="api-status" class="badge badge-idle">Belum Dites</span>
+        </div>
+    </header>
+
+    <div class="main-container" style="max-width: 900px; margin: 20px auto;">
+        <main class="content-panel" style="width: 100%;">
+            <!-- Security Info Banner -->
+            <div class="card" style="padding: 16px; border-left: 4px solid var(--good-green); background: rgba(8, 153, 129, 0.08);">
+                <h3 style="color: var(--good-green); font-size: 14px; margin-bottom: 6px;">🔒 Penyimpanan 100% Aman di Lokal Laptop Anda</h3>
+                <p style="font-size: 12px; color: var(--text-light); line-height: 1.6;">
+                    API Key dan Secret Key Anda disimpan langsung di harddisk laptop Anda: <br>
+                    <code style="background: #131722; padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); color: var(--highlight-gold);">config/credentials.json</code><br>
+                    Data kunci ini <strong>tidak pernah dikirim ke pihak ketiga atau cloud mana pun</strong>, hanya dipakai oleh aplikasi Rust di laptop Anda untuk berkomunikasi langsung ke server resmi Binance.
+                </p>
+            </div>
+
+            <!-- Form Kredensial Binance Testnet (Demo) -->
+            <div class="card form-section" style="padding: 20px;">
+                <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div>
+                        <h2 style="font-size: 16px; color: var(--text-white);">1. Binance Futures Demo (Testnet)</h2>
+                        <p style="font-size: 12px; color: var(--text-dim);">Gunakan API Key dari jaringan Testnet untuk paper trading tanpa uang asli.</p>
+                    </div>
+                    <a href="https://testnet.binancefuture.com" target="_blank" class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px;">
+                        ↗ Buka Akun Testnet Gratis
+                    </a>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label for="demo_api_key">Demo API Key</label>
+                    <input type="password" id="demo_api_key" placeholder="Masukkan Testnet API Key Anda..." style="width: 100%; font-family: var(--font-mono);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="demo_secret_key">Demo Secret Key</label>
+                    <input type="password" id="demo_secret_key" placeholder="Masukkan Testnet Secret Key Anda..." style="width: 100%; font-family: var(--font-mono);">
+                </div>
+
+                <!-- Test Result Pill -->
+                <div id="test-result-box" style="display: none; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+                    <div style="font-weight: 700; margin-bottom: 4px;" id="test-result-title">Hasil Tes Koneksi</div>
+                    <div style="font-size: 12px;" id="test-result-desc">-</div>
+                </div>
+
+                <div style="display: flex; gap: 12px;">
+                    <button type="button" id="btn-test-demo" class="btn btn-secondary" style="flex: 1;">
+                        🧪 Test Koneksi Testnet
+                    </button>
+                    <button type="button" id="btn-save-creds" class="btn btn-primary" style="flex: 1;">
+                        💾 Simpan Kredensial
+                    </button>
+                </div>
+            </div>
+
+            <!-- Section Real Account (Optional / Placeholder) -->
+            <div class="card form-section" style="padding: 20px; opacity: 0.85;">
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <h2 style="font-size: 16px; color: var(--text-white);">2. Binance Futures Real Account (Opsional)</h2>
+                    <p style="font-size: 12px; color: var(--text-dim);">Untuk eksekusi modal riil jika Anda sudah siap setelah pengujian di demo.</p>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label for="real_api_key">Real API Key</label>
+                    <input type="password" id="real_api_key" placeholder="(Opsional) Masukkan Real API Key..." style="width: 100%; font-family: var(--font-mono);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="real_secret_key">Real Secret Key</label>
+                    <input type="password" id="real_secret_key" placeholder="(Opsional) Masukkan Real Secret Key..." style="width: 100%; font-family: var(--font-mono);">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const demoApiKey = document.getElementById('demo_api_key');
+            const demoSecretKey = document.getElementById('demo_secret_key');
+            const realApiKey = document.getElementById('real_api_key');
+            const realSecretKey = document.getElementById('real_secret_key');
+
+            const btnSave = document.getElementById('btn-save-creds');
+            const btnTest = document.getElementById('btn-test-demo');
+            const testResultBox = document.getElementById('test-result-box');
+            const testResultTitle = document.getElementById('test-result-title');
+            const testResultDesc = document.getElementById('test-result-desc');
+            const apiStatus = document.getElementById('api-status');
+
+            // Load existing credentials
+            fetch('/api/settings/get')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.demo_api_key) demoApiKey.value = data.demo_api_key;
+                    if (data.demo_secret_key) demoSecretKey.value = data.demo_secret_key;
+                    if (data.real_api_key) realApiKey.value = data.real_api_key;
+                    if (data.real_secret_key) realSecretKey.value = data.real_secret_key;
+
+                    if (data.demo_api_key && data.demo_secret_key) {
+                        apiStatus.textContent = 'Tersimpan (Belum Dites)';
+                        apiStatus.className = 'badge badge-idle';
+                    }
+                })
+                .catch(err => console.error('Gagal load creds:', err));
+
+            // Save Credentials
+            btnSave.addEventListener('click', () => {
+                const payload = {
+                    demo_api_key: demoApiKey.value.trim(),
+                    demo_secret_key: demoSecretKey.value.trim(),
+                    real_api_key: realApiKey.value.trim(),
+                    real_secret_key: realSecretKey.value.trim(),
+                };
+
+                btnSave.disabled = true;
+                fetch('/api/settings/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    btnSave.disabled = false;
+                    if (data.status === 'ok') {
+                        alert('✓ Kredensial berhasil disimpan aman di config/credentials.json!');
+                    } else {
+                        alert('Gagal menyimpan: ' + data.message);
+                    }
+                })
+                .catch(err => {
+                    btnSave.disabled = false;
+                    alert('Error: ' + err.message);
+                });
+            });
+
+            // Test Testnet Connection
+            btnTest.addEventListener('click', () => {
+                const apiKey = demoApiKey.value.trim();
+                const secretKey = demoSecretKey.value.trim();
+
+                if (!apiKey || !secretKey) {
+                    alert('Silakan isi Demo API Key dan Secret Key terlebih dahulu!');
+                    return;
+                }
+
+                btnTest.disabled = true;
+                btnTest.textContent = '⏳ Menghubungi Binance Testnet...';
+                testResultBox.style.display = 'none';
+
+                fetch('/api/settings/test_demo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey, secret_key: secretKey })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    btnTest.disabled = false;
+                    btnTest.textContent = '🧪 Test Koneksi Testnet';
+                    testResultBox.style.display = 'block';
+
+                    if (data.status === 'ok') {
+                        const bal = data.account;
+                        testResultBox.style.background = 'rgba(8, 153, 129, 0.15)';
+                        testResultBox.style.border = '1px solid var(--good-green)';
+                        testResultBox.style.color = 'var(--good-green)';
+                        testResultTitle.textContent = '✓ KONEKSI BERHASIL TERHUBUNG!';
+                        testResultDesc.innerHTML = `
+                            <strong>Saldo Dompet:</strong> ${bal.wallet_balance} USDT <br>
+                            <strong>Equity:</strong> ${bal.equity} USDT | <strong>Margin Ratio:</strong> ${bal.margin_ratio}% <br>
+                            <em>Waktu Ping: ${bal.update_time}</em>
+                        `;
+                        apiStatus.textContent = 'Connected (Testnet)';
+                        apiStatus.className = 'badge badge-online';
+                    } else {
+                        testResultBox.style.background = 'rgba(242, 54, 69, 0.15)';
+                        testResultBox.style.border = '1px solid var(--bad-red)';
+                        testResultBox.style.color = 'var(--bad-red)';
+                        testResultTitle.textContent = '❌ KONEKSI GAGAL';
+                        testResultDesc.textContent = data.message;
+                        apiStatus.textContent = 'Error (Disconnected)';
+                        apiStatus.className = 'badge badge-idle';
+                    }
+                })
+                .catch(err => {
+                    btnTest.disabled = false;
+                    btnTest.textContent = '🧪 Test Koneksi Testnet';
+                    testResultBox.style.display = 'block';
+                    testResultBox.style.background = 'rgba(242, 54, 69, 0.15)';
+                    testResultBox.style.border = '1px solid var(--bad-red)';
+                    testResultBox.style.color = 'var(--bad-red)';
+                    testResultTitle.textContent = '❌ ERROR JARINGAN';
+                    testResultDesc.textContent = err.message;
+                });
+            });
+        });
+    </script>
+</body>
+</html>

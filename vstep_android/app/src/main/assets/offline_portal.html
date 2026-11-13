@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VolStep Mobile Portal</title>
+    <style>
+        body {
+            background-color: #0b0e14;
+            color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            text-align: center;
+        }
+        .logo-box {
+            width: 72px;
+            height: 72px;
+            background: linear-gradient(135deg, #00f2fe, #4facfe);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 24px rgba(0, 242, 254, 0.3);
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 8px 0;
+            color: #ffffff;
+        }
+        p {
+            font-size: 13px;
+            color: #8b949e;
+            line-height: 1.5;
+            max-width: 320px;
+            margin: 0 0 24px 0;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #262c36;
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            max-width: 320px;
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            font-size: 13px;
+            margin: 0 0 8px 0;
+            color: #00f2fe;
+        }
+        .card ol {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 12px;
+            color: #c9d1d9;
+            line-height: 1.6;
+        }
+        .btn {
+            background: #00f2fe;
+            color: #0b0e14;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            width: 100%;
+            max-width: 320px;
+            box-sizing: border-box;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-box">⚡</div>
+    <h1>VolStep Mobile Client</h1>
+    <p>Aplikasi native Android untuk memonitor & mengontrol VolStep Futures Bot di Binance Testnet & Real.</p>
+
+    <div class="card">
+        <h3>Petunjuk Koneksi ke Server Bot:</h3>
+        <ol>
+            <li>Jalankan bot di PC / Laptop / VPS Anda: <code>./run.sh</code>.</li>
+            <li>Pastikan HP Anda terhubung ke WiFi yang sama dengan PC (atau gunakan IP VPS).</li>
+            <li>Klik tombol <b>Server IP</b> di pojok kanan atas aplikasi.</li>
+            <li>Masukkan alamat IP PC Anda (contoh: <code>http://192.168.1.15:5050</code>).</li>
+        </ol>
+    </div>
+
+    <button class="btn" onclick="location.reload()">Coba Muat Ulang</button>
+</body>
+</html>

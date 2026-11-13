@@ -1,0 +1,1284 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © Zeiierman / Quant Modified: Volatility Step S/R Line with Channel + S/R Price & % Change Label + High/Low Distance to SR Mid (Excluding Step Bar)
+// + Strategy Finder: Binance Futures (Cross Margin | One-Way Mode) simulator paralel (Base Persen & Base Bar TP/SL), Round-Trip Fee, Auto-Ranking + Full Visual
+
+//@version=6
+indicator('Volatility Step S/R + Strategy Finder', shorttitle = 'VolStep Finder', overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back = 5000)
+
+// ~~ ToolTips
+t1  = 'Lookback bar untuk mengukur volatilitas baseline.'
+t2  = 'Pengali deviasi loncatan level S/R.'
+t3  = 'Jika aktif, garis S/R dan Entry langsung muncul secara realtime saat level tertembus tanpa menunggu candle close.'
+t4  = 'Memperpanjang garis level aktif ke kanan melewati candle saat ini.'
+t5  = 'Anchor: level loncat ke harga Close. Without Anchor: level loncat per kelipatan deviasi (step).'
+t6  = 'Pengali jarak garis channel atas & bawah berbasis nilai volatilitas.'
+t7  = 'Menampilkan label informasi harga dan/atau persentase perubahan level S/R.'
+t8  = 'All Steps: label tetap tersimpan di setiap step historis. Active Only: hanya menampilkan label pada level S/R yang sedang aktif.'
+t9  = 'Menambahkan info jarak High tertinggi dan Low terendah (mulai bar ke-2 setelah level aktif) terhadap SR mid, dalam persen.'
+t10 = 'Multi-line: H dan L di baris terpisah di bawah info S/R. Single-line: semua dalam satu baris.'
+t11 = 'Menambahkan teks awalan "SR " di depan angka harga pada label.'
+t12 = 'One-Way Mode (Trend & Counter) hanya mengizinkan maksimal 1 posisi terbuka. Hedge membuka BUY + SELL sekaligus.'
+t13 = 'M = median H% (untuk Long) atau median |L%| (untuk Short) dari seluruh SR yang sudah selesai (tanpa lookahead). TP/SL/Trailing dicoba dalam kelipatan M, dan dalam persen tetap (Fixed 1-3).'
+t14 = 'Entry berbasis median baru dibuka setelah ada minimal sekian SR selesai.'
+t15 = 'Likuidasi cross: equity <= maintenance margin (total notional x MMR). Setelah itu saldo = 0 dan strategi tersebut berhenti.'
+t16 = 'Jumlah hari backtest dihitung dari data terakhir. 0 = seluruh data di chart.'
+t17 = 'Aturan untuk One-Way Mode (Trend/Counter) yang menggunakan SL Tetap/Bar ketika SR baru terbentuk sementara 1 posisi lama masih terbuka.'
+t18 = 'Pilih strategi untuk divisualkan di chart dan ditampilkan rinciannya pada Tabel Detail. Pilih "Top #1 Sesuai Filter Leaderboard" agar otomatis mengikuti filter tabel.'
+t19 = 'Mengatur elemen visual apa saja yang ditampilkan pada chart untuk strategi terpilih.'
+t20 = 'Pilih tabel mana yang ingin ditampilkan pada chart: Leaderboard (Top Strategy), Detail Strategy (sesuai strategi yang dipilih), Keduanya, atau Sembunyikan Semua.'
+t21 = 'B1 & B2: jumlah bar closed setelah entry untuk BarFix (tutup paksa di bar ke-N) dan BarProf (tutup mulai bar ke-N jika net profit bersih setelah fee 2 arah). BD: jumlah candle searah berturut-turut untuk BarDir.'
+t22 = 'S1 & S2: jumlah bar closed setelah entry untuk BarLoss (cut loss mulai bar ke-N jika posisi rugi bersih) dan MaxBar (batas waktu maksimal posisi terbuka). SA: jumlah candle melawan arah berturut-turut di zona rugi untuk cut loss BarAdv.'
+t23 = 'Filter jenis strategi yang ditampilkan pada tabel Leaderboard: Base Bar (TP/SL berbasis bar) atau Base Persen (Fixed % / Median %).'
+
+// ~~ Line Settings
+lineMode = input.string('Anchor', options = ['Anchor', 'Without Anchor'], title = 'Line Mode', group = 'Line Settings', tooltip = t5)
+
+// ~~ Volatility Settings
+volatilityType   = input.string('Stdev', options = ['Stdev', 'Atr'], title = 'Volatility Type', group = 'Volatility Settings')
+volatilityLength = input.int(200, title = 'Lookback Period', minval = 2, inline = 'vol', group = 'Volatility Settings', tooltip = t1)
+volMult          = input.float(4.0, title = 'Multiplier', minval = 0.1, step = 0.1, inline = 'vol', group = 'Volatility Settings', tooltip = t2)
+realtimeUpdate   = input.bool(true, title = 'Realtime Update (No Lag)', group = 'Volatility Settings', tooltip = t3)
+
+// ~~ Channel Settings
+showChannel     = input.bool(true, title = 'Show Upper & Lower Channel', group = 'Channel Settings')
+channelMult     = input.float(0.1, title = 'Channel Width Multiplier', minval = 0.01, step = 0.01, group = 'Channel Settings', tooltip = t6)
+channelStyleStr = input.string('Dotted', options = ['Solid', 'Dashed', 'Dotted'], title = 'Channel Line Style', group = 'Channel Settings')
+
+channelStyle = channelStyleStr == 'Solid' ? line.style_solid : channelStyleStr == 'Dashed' ? line.style_dashed : line.style_dotted
+
+// ~~ Visual Settings
+lineColor    = input.color(#2196f3, title = 'Color', inline = 'vis', group = 'Visual Settings')
+lineWidth    = input.int(2, title = 'Width', minval = 1, maxval = 4, inline = 'vis', group = 'Visual Settings')
+extendActive = input.bool(false, title = 'Extend Active Line to Right', group = 'Visual Settings', tooltip = t4)
+
+// ~~ Label Settings (Harga S/R & Perubahan)
+showLabels    = input.bool(true, title = 'Show S/R Label', group = 'Label Settings', tooltip = t7)
+labelMode     = input.string('All Steps', options = ['All Steps', 'Active Only'], title = 'Display Mode', group = 'Label Settings', tooltip = t8)
+labelContent  = input.string('Price & Percent', options = ['Price & Percent', 'Price Only', 'Percent Only', 'Diff & Percent', 'Full (Price, Diff & %)'], title = 'Label Content', group = 'Label Settings')
+showSrPrefix  = input.bool(true, title = 'Show "SR " Prefix', inline = 'pref', group = 'Label Settings', tooltip = t11)
+colorMode     = input.string('Directional (Green/Red)', options = ['Directional (Green/Red)', 'Match Line Color'], title = 'Color Mode', group = 'Label Settings')
+bullColor     = input.color(#089981, title = 'Bullish (+)', inline = 'lblCol', group = 'Label Settings')
+bearColor     = input.color(#f23645, title = 'Bearish (-)', inline = 'lblCol', group = 'Label Settings')
+labelStyleStr = input.string('Badge', options = ['Badge', 'Plain Text'], title = 'Label Style', group = 'Label Settings')
+labelSizeStr  = input.string('Small', options = ['Tiny', 'Small', 'Normal', 'Large'], title = 'Text Size', group = 'Label Settings')
+pctDecimals   = input.int(2, title = 'Percent Decimals', minval = 1, maxval = 4, group = 'Label Settings')
+labelOffset   = input.int(1, title = 'Label Offset (Bars)', minval = 0, maxval = 10, group = 'Label Settings')
+
+// ~~ High / Low Distance Settings
+showRange   = input.bool(true, title = 'Show High/Low Distance to SR Mid (%)', group = 'High/Low Distance', tooltip = t9)
+rangeLayout = input.string('Multi-line', options = ['Multi-line', 'Single-line'], title = 'Layout', group = 'High/Low Distance', tooltip = t10)
+
+// ~~ Futures Account Settings
+initCap     = input.float(1000.0, title = 'Saldo Awal (USDT)', minval = 1.0, group = 'Futures Account')
+marginPct   = input.float(5.0, title = 'Margin per Entry (%)', minval = 0.1, maxval = 100.0, step = 0.5, group = 'Futures Account')
+marginBasis = input.string('Current Balance', options = ['Current Balance', 'Initial Balance'], title = 'Margin Basis', group = 'Futures Account')
+leverage    = input.int(10, title = 'Leverage (x)', minval = 1, maxval = 125, group = 'Futures Account')
+feeEntry    = input.float(0.05, title = 'Fee Market / Taker - Entry & Stop (%)', minval = 0.0, step = 0.01, group = 'Futures Account')
+feeExit     = input.float(0.05, title = 'Fee Exit TP Harga (%) [0.05=Market, 0.02=Limit]', minval = 0.0, step = 0.01, group = 'Futures Account')
+mmrPct      = input.float(0.4, title = 'Maintenance Margin Rate (%)', minval = 0.01, step = 0.05, group = 'Futures Account', tooltip = t15)
+oneWayRule  = input.string('Tutup Posisi Lama & Buka Baru di SR Baru', options = [
+      'Tutup Posisi Lama & Buka Baru di SR Baru',
+      'Reverse Jika Lawan Arah, Tahan Jika Searah',
+      'Tahan Posisi Lama (Skip SR Baru Jika Masih Open)'
+      ], title = 'Aturan 1 Posisi (One-Way Mode)', group = 'Futures Account', tooltip = t17)
+maxOpen     = input.int(20, title = 'Max Posisi Open (Khusus Mode Hedge)', minval = 2, maxval = 200, group = 'Futures Account')
+btDays      = input.int(0, title = 'Backtest Days (0 = semua)', minval = 0, group = 'Futures Account', tooltip = t16)
+
+// ~~ Strategy Finder Settings
+incTrend    = input.bool(true, title = 'One-Way: Trend (SR naik BUY, turun SELL)', group = 'Strategy Finder', tooltip = t12)
+incCounter  = input.bool(true, title = 'One-Way: Counter (kebalikan Trend)', group = 'Strategy Finder')
+incHedge    = input.bool(false, title = 'Hedge Mode (BUY + SELL sekaligus)', group = 'Strategy Finder')
+incBarTp    = input.bool(true, title = 'Sertakan Strategi Bar-Based TP (BarFix / BarProf / BarDir)', group = 'Strategy Finder')
+incBarSl    = input.bool(true, title = 'Sertakan Strategi Bar-Based SL (BarLoss / MaxBar / BarAdv)', group = 'Strategy Finder')
+fixed1      = input.float(0.3, title = 'Fixed 1 (%)', minval = 0.01, step = 0.05, inline = 'fx', group = 'Strategy Finder', tooltip = t13)
+fixed2      = input.float(0.6, title = 'Fixed 2 (%)', minval = 0.01, step = 0.05, inline = 'fx', group = 'Strategy Finder')
+fixed3      = input.float(1.0, title = 'Fixed 3 (%)', minval = 0.01, step = 0.05, inline = 'fx', group = 'Strategy Finder')
+barTp1      = input.int(3, title = 'TP Bar B1', minval = 1, maxval = 100, inline = 'btp', group = 'Strategy Finder', tooltip = t21)
+barTp2      = input.int(6, title = 'TP Bar B2', minval = 1, maxval = 100, inline = 'btp', group = 'Strategy Finder')
+barTpDir    = input.int(3, title = 'Candle Searah BD', minval = 1, maxval = 20, inline = 'btp', group = 'Strategy Finder')
+slBar1      = input.int(4, title = 'SL Bar S1', minval = 1, maxval = 100, inline = 'bsl', group = 'Strategy Finder', tooltip = t22)
+slBar2      = input.int(8, title = 'SL Bar S2', minval = 1, maxval = 100, inline = 'bsl', group = 'Strategy Finder')
+slBarAdv    = input.int(3, title = 'Candle Lawan SA', minval = 1, maxval = 20, inline = 'bsl', group = 'Strategy Finder')
+minLevels   = input.int(10, title = 'Min SR Selesai (Entry Berbasis Median)', minval = 1, group = 'Strategy Finder', tooltip = t14)
+rankBy      = input.string('Net / Max DD', options = ['Net Profit %', 'Net / Max DD', 'Profit Factor'], title = 'Ranking Berdasarkan', group = 'Strategy Finder')
+
+stratFilter = input.string('Semua Strategi', options = [
+      'Semua Strategi',
+      'Base Bar (Semua TP / SL Bar)',
+      'Base Bar Murni (TP Bar + SL Bar)',
+      'Base Bar - TP Saja',
+      'Base Bar - SL Saja',
+      'Base Persen (Semua Fixed % & Median %)',
+      'Base Persen Tetap (Fixed F1/F2/F3 %)',
+      'Base Persen Median (0.5M / 1M %)'
+      ], title = 'Filter Strategi di Leaderboard', group = 'Strategy Finder', tooltip = t23)
+
+topN        = input.int(15, title = 'Tampilkan Top N (Leaderboard)', minval = 3, maxval = 105, group = 'Strategy Finder')
+tableMode   = input.string('Keduanya (Top + Detail)', options = ['Keduanya (Top + Detail)', 'Top Strategy (Leaderboard Saja)', 'Detail Strategy (Detail Saja)', 'Sembunyikan Semua'], title = 'Tampilkan Tabel', group = 'Strategy Finder', tooltip = t20)
+ldPosStr    = input.string('Top Right', options = ['Top Right', 'Top Left', 'Bottom Right', 'Bottom Left'], title = 'Posisi Leaderboard', group = 'Strategy Finder')
+dtPosStr    = input.string('Bottom Right', options = ['Top Right', 'Top Left', 'Bottom Right', 'Bottom Left'], title = 'Posisi Detail', group = 'Strategy Finder')
+
+// ~~ Strategy Visual & Detail Selection
+selStrategy = input.string('Top #1 Sesuai Filter Leaderboard (Otomatis)', options = [
+      'None',
+      'Top #1 Sesuai Filter Leaderboard (Otomatis)',
+      'Top #1 Semua Strategi (Otomatis)',
+      'Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)',
+      'Top #1 Base Bar TP (Bar TP Terbaik)',
+      'Top #1 Base Bar SL (Bar SL Terbaik)',
+      'Top #1 Base Persen Tetap (Fixed % Terbaik)',
+      'Top #1 Base Persen Median (Median % Terbaik)',
+      'TREND | TP 0.5M | SL NextSR',
+      'TREND | TP 1M | SL NextSR',
+      'TREND | NextSR only',
+      'TREND | TP 0.5M | SL 1M',
+      'TREND | TP 1M | SL 1M',
+      'TREND | TP 1M | SL 0.5M',
+      'TREND | TP F1 | SL F1',
+      'TREND | TP F2 | SL F1',
+      'TREND | TP F3 | SL F2',
+      'TREND | TP F2 | SL NextSR',
+      'TREND | Trail 0.5M/0.5M | SL NextSR',
+      'TREND | Trail 1M/0.5M | SL NextSR',
+      'TREND | Trail F2/F1 | SL F1',
+      'TREND | TP BarFix B1 | SL NextSR',
+      'TREND | TP BarFix B2 | SL NextSR',
+      'TREND | TP BarFix B1 | SL F1',
+      'TREND | TP BarProf B1 | SL NextSR',
+      'TREND | TP BarProf B2 | SL NextSR',
+      'TREND | TP BarProf B1 | SL F1',
+      'TREND | TP BarDir BD | SL NextSR',
+      'TREND | TP BarDir BD | SL F1',
+      'TREND | TP 1M | SL BarLoss S1',
+      'TREND | TP F2 | SL BarLoss S1',
+      'TREND | Trail 1M/0.5M | SL BarLoss S1',
+      'TREND | TP 1M | SL MaxBar S1',
+      'TREND | TP F2 | SL MaxBar S2',
+      'TREND | TP 1M | SL BarAdv SA',
+      'TREND | TP F2 | SL BarAdv SA',
+      'TREND | Trail F2/F1 | SL BarAdv SA',
+      'TREND | TP BarFix B2 | SL BarLoss S1',
+      'TREND | TP BarProf B1 | SL BarLoss S1',
+      'TREND | TP BarProf B1 | SL MaxBar S2',
+      'TREND | TP BarProf B1 | SL BarAdv SA',
+      'TREND | TP BarDir BD | SL BarLoss S1',
+      'TREND | TP BarDir BD | SL BarAdv SA',
+      'COUNTER | TP 0.5M | SL NextSR',
+      'COUNTER | TP 1M | SL NextSR',
+      'COUNTER | NextSR only',
+      'COUNTER | TP 0.5M | SL 1M',
+      'COUNTER | TP 1M | SL 1M',
+      'COUNTER | TP 1M | SL 0.5M',
+      'COUNTER | TP F1 | SL F1',
+      'COUNTER | TP F2 | SL F1',
+      'COUNTER | TP F3 | SL F2',
+      'COUNTER | TP F2 | SL NextSR',
+      'COUNTER | Trail 0.5M/0.5M | SL NextSR',
+      'COUNTER | Trail 1M/0.5M | SL NextSR',
+      'COUNTER | Trail F2/F1 | SL F1',
+      'COUNTER | TP BarFix B1 | SL NextSR',
+      'COUNTER | TP BarFix B2 | SL NextSR',
+      'COUNTER | TP BarFix B1 | SL F1',
+      'COUNTER | TP BarProf B1 | SL NextSR',
+      'COUNTER | TP BarProf B2 | SL NextSR',
+      'COUNTER | TP BarProf B1 | SL F1',
+      'COUNTER | TP BarDir BD | SL NextSR',
+      'COUNTER | TP BarDir BD | SL F1',
+      'COUNTER | TP 1M | SL BarLoss S1',
+      'COUNTER | TP F2 | SL BarLoss S1',
+      'COUNTER | Trail 1M/0.5M | SL BarLoss S1',
+      'COUNTER | TP 1M | SL MaxBar S1',
+      'COUNTER | TP F2 | SL MaxBar S2',
+      'COUNTER | TP 1M | SL BarAdv SA',
+      'COUNTER | TP F2 | SL BarAdv SA',
+      'COUNTER | Trail F2/F1 | SL BarAdv SA',
+      'COUNTER | TP BarFix B2 | SL BarLoss S1',
+      'COUNTER | TP BarProf B1 | SL BarLoss S1',
+      'COUNTER | TP BarProf B1 | SL MaxBar S2',
+      'COUNTER | TP BarProf B1 | SL BarAdv SA',
+      'COUNTER | TP BarDir BD | SL BarLoss S1',
+      'COUNTER | TP BarDir BD | SL BarAdv SA',
+      'HEDGE | TP 0.5M | SL NextSR',
+      'HEDGE | TP 1M | SL NextSR',
+      'HEDGE | NextSR only',
+      'HEDGE | TP 0.5M | SL 1M',
+      'HEDGE | TP 1M | SL 1M',
+      'HEDGE | TP 1M | SL 0.5M',
+      'HEDGE | TP F1 | SL F1',
+      'HEDGE | TP F2 | SL F1',
+      'HEDGE | TP F3 | SL F2',
+      'HEDGE | TP F2 | SL NextSR',
+      'HEDGE | Trail 0.5M/0.5M | SL NextSR',
+      'HEDGE | Trail 1M/0.5M | SL NextSR',
+      'HEDGE | Trail F2/F1 | SL F1',
+      'HEDGE | TP BarFix B1 | SL NextSR',
+      'HEDGE | TP BarFix B2 | SL NextSR',
+      'HEDGE | TP BarFix B1 | SL F1',
+      'HEDGE | TP BarProf B1 | SL NextSR',
+      'HEDGE | TP BarProf B2 | SL NextSR',
+      'HEDGE | TP BarProf B1 | SL F1',
+      'HEDGE | TP BarDir BD | SL NextSR',
+      'HEDGE | TP BarDir BD | SL F1',
+      'HEDGE | TP 1M | SL BarLoss S1',
+      'HEDGE | TP F2 | SL BarLoss S1',
+      'HEDGE | Trail 1M/0.5M | SL BarLoss S1',
+      'HEDGE | TP 1M | SL MaxBar S1',
+      'HEDGE | TP F2 | SL MaxBar S2',
+      'HEDGE | TP 1M | SL BarAdv SA',
+      'HEDGE | TP F2 | SL BarAdv SA',
+      'HEDGE | Trail F2/F1 | SL BarAdv SA',
+      'HEDGE | TP BarFix B2 | SL BarLoss S1',
+      'HEDGE | TP BarProf B1 | SL BarLoss S1',
+      'HEDGE | TP BarProf B1 | SL MaxBar S2',
+      'HEDGE | TP BarProf B1 | SL BarAdv SA',
+      'HEDGE | TP BarDir BD | SL BarLoss S1',
+      'HEDGE | TP BarDir BD | SL BarAdv SA'
+      ], title = 'Select Strategy (Visual & Tabel Detail)', group = 'Strategy Visual', tooltip = t18)
+
+visMode = input.string('Semua (Entry + TP + SL + Trail + Exit)', options = [
+      'Semua (Entry + TP + SL + Trail + Exit)',
+      'Ringkas (Entry + Exit + Trail)',
+      'Level Target Saja (Entry + TP + SL + Trail)',
+      'Hanya Entry & Exit',
+      'Custom (Sesuai Checkbox)',
+      'Sembunyikan Visual Chart'
+      ], title = 'Mode Tampilan Label', group = 'Strategy Visual', tooltip = t19)
+
+showVisEntry  = input.bool(true, title = 'Label ENTRY', inline = 'vchk1', group = 'Strategy Visual')
+showVisTp     = input.bool(true, title = 'Garis Level TP', inline = 'vchk1', group = 'Strategy Visual')
+showVisSl     = input.bool(true, title = 'Garis Level SL', inline = 'vchk1', group = 'Strategy Visual')
+showVisTrail  = input.bool(true, title = 'Label & Garis TRAIL', inline = 'vchk2', group = 'Strategy Visual')
+showVisExit   = input.bool(true, title = 'Label EXIT (TP/SL/Trail/NextSR)', inline = 'vchk2', group = 'Strategy Visual')
+showVisOpen   = input.bool(true, title = 'Garis & Info Posisi Open Aktif', inline = 'vchk2', group = 'Strategy Visual')
+showTradeLine = input.bool(true, title = 'Garis Penghubung Entry ke Exit', group = 'Strategy Visual')
+maxVisTrades  = input.int(25, title = 'Maks Riwayat Trade Divisualkan', minval = 1, maxval = 80, group = 'Strategy Visual')
+tradeLblStr   = input.string('Small', options = ['Tiny', 'Small', 'Normal'], title = 'Ukuran Label Trade', group = 'Strategy Visual')
+
+entryBuyCol   = input.color(#089981, title = 'Warna Entry BUY', inline = 'vcol1', group = 'Strategy Visual')
+entrySellCol  = input.color(#f23645, title = 'Warna Entry SELL', inline = 'vcol1', group = 'Strategy Visual')
+tpVisCol      = input.color(#00c853, title = 'Warna TP', inline = 'vcol2', group = 'Strategy Visual')
+slVisCol      = input.color(#ff1744, title = 'Warna SL', inline = 'vcol2', group = 'Strategy Visual')
+trailVisCol   = input.color(#ff9100, title = 'Warna TRAIL', inline = 'vcol3', group = 'Strategy Visual')
+nextVisCol    = input.color(#7c4dff, title = 'Warna NEXT SR', inline = 'vcol3', group = 'Strategy Visual')
+
+lblStyle   = labelStyleStr == 'Badge' ? label.style_label_left : label.style_none
+lblSize    = labelSizeStr == 'Tiny' ? size.tiny : labelSizeStr == 'Small' ? size.small : labelSizeStr == 'Normal' ? size.normal : size.large
+tradeLblSz = tradeLblStr == 'Tiny' ? size.tiny : tradeLblStr == 'Small' ? size.small : size.normal
+pctFormat  = pctDecimals == 1 ? '#.0' : pctDecimals == 3 ? '#.000' : pctDecimals == 4 ? '#.0000' : '#.00'
+
+// ══════════════════════════════════════════════════════════
+// 1. VOLATILITY ENGINE
+// ══════════════════════════════════════════════════════════
+stdevVal      = ta.stdev(close, volatilityLength)
+atrVal        = ta.atr(volatilityLength)
+volValue      = (volatilityType == 'Stdev' ? stdevVal : atrVal) * volMult
+channelOffset = volValue * channelMult
+
+// ══════════════════════════════════════════════════════════
+// 2. STEP S/R LEVEL
+// ══════════════════════════════════════════════════════════
+var float confirmedSr = close
+
+float stepLevel = lineMode == 'Anchor' ? close : confirmedSr + (close > confirmedSr ? 1 : -1) * volValue
+float newLevel  = math.abs(close - confirmedSr) > volValue ? stepLevel : confirmedSr
+
+if barstate.isconfirmed
+    confirmedSr := newLevel
+
+float activeSr = realtimeUpdate ? newLevel : confirmedSr
+
+// ══════════════════════════════════════════════════════════
+// 3. HORIZONTAL LINE & LABEL RENDERING
+// ══════════════════════════════════════════════════════════
+newLine(y, col, w, sty) =>
+    line.new(bar_index, y, bar_index + 1, y, color = col, width = w, style = sty, extend = extendActive ? extend.right : extend.none)
+
+closeLine(lineId) =>
+    if not na(lineId)
+        if extendActive
+            line.set_extend(lineId, extend.none)
+        line.set_x2(lineId, bar_index)
+
+extendLine(lineId) =>
+    if not na(lineId) and not extendActive
+        line.set_x2(lineId, bar_index + 1)
+
+signedPct(v) =>
+    (v > 0 ? '+' : '') + str.tostring(v, pctFormat) + '%'
+
+formatLabelText(curr, prev, pct, hi, lo) =>
+    string priceStr = (showSrPrefix ? 'SR ' : '') + str.tostring(curr, format.mintick)
+    string base     = ''
+
+    if na(prev) or na(pct)
+        base := priceStr
+    else
+        pctStr   = signedPct(pct)
+        diff     = curr - prev
+        diffSign = diff > 0 ? '+' : ''
+        diffStr  = diffSign + str.tostring(diff, format.mintick)
+
+        base := switch labelContent
+            'Price Only'             => priceStr
+            'Price & Percent'        => priceStr + ' (' + pctStr + ')'
+            'Percent Only'           => pctStr
+            'Diff & Percent'         => diffStr + ' (' + pctStr + ')'
+            'Full (Price, Diff & %)' => priceStr + ' [' + diffStr + '] (' + pctStr + ')'
+            => priceStr + ' (' + pctStr + ')'
+
+    string result = base
+    if showRange and not na(hi) and not na(lo) and curr != 0
+        float hiPct  = (hi - curr) / curr * 100
+        float loPct  = (lo - curr) / curr * 100
+        string hiStr = 'H ' + signedPct(hiPct)
+        string loStr = 'L ' + signedPct(loPct)
+        result := rangeLayout == 'Multi-line' ? base + '\n' + hiStr + '\n' + loStr : base + '  |  ' + hiStr + '  ' + loStr
+    result
+
+var line  midLine   = na
+var line  upLine    = na
+var line  loLine    = na
+var label midLabel  = na
+var float curLevel  = na
+var float prevLevel = na
+var float curPct    = na
+var float srHigh    = na
+var float srLow     = na
+
+levelChanged = na(curLevel) or activeSr != curLevel or (showChannel and na(upLine) and not na(channelOffset))
+
+if levelChanged
+    closeLine(midLine)
+    closeLine(upLine)
+    closeLine(loLine)
+
+    if not na(midLabel)
+        if labelMode == 'Active Only'
+            label.delete(midLabel)
+            midLabel := na
+        else
+            label.set_x(midLabel, bar_index)
+
+    bool isPriceStep = na(curLevel) or activeSr != curLevel
+    if isPriceStep
+        if not na(curLevel)
+            prevLevel := curLevel
+        curLevel := activeSr
+        srHigh   := na
+        srLow    := na
+
+    midLine := newLine(activeSr, lineColor, lineWidth, line.style_solid)
+
+    if showChannel and not na(channelOffset)
+        upLine := newLine(activeSr + channelOffset, color.new(lineColor, 20), 1, channelStyle)
+        loLine := newLine(activeSr - channelOffset, color.new(lineColor, 20), 1, channelStyle)
+    else
+        upLine := na
+        loLine := na
+
+    if showLabels
+        float pctChange = not na(prevLevel) and prevLevel != 0 ? ((activeSr - prevLevel) / prevLevel) * 100 : na
+        curPct := pctChange
+        bool  isUp      = nz(pctChange) >= 0
+        color boxCol    = lblStyle == label.style_none ? color.new(color.white, 100) : (colorMode == 'Directional (Green/Red)' ? (isUp ? bullColor : bearColor) : lineColor)
+        color txtCol    = lblStyle == label.style_none ? (colorMode == 'Directional (Green/Red)' ? (isUp ? bullColor : bearColor) : lineColor) : color.white
+        string txt      = formatLabelText(activeSr, prevLevel, pctChange, srHigh, srLow)
+
+        midLabel := label.new(
+            x         = bar_index + labelOffset,
+            y         = activeSr,
+            text      = txt,
+            color     = boxCol,
+            textcolor = txtCol,
+            style     = lblStyle,
+            size      = lblSize,
+            textalign = text.align_left
+        )
+    else
+        midLabel := na
+else
+    srHigh := na(srHigh) ? high : math.max(srHigh, high)
+    srLow  := na(srLow)  ? low  : math.min(srLow, low)
+
+    extendLine(midLine)
+    extendLine(upLine)
+    extendLine(loLine)
+    if showLabels and not na(midLabel)
+        label.set_x(midLabel, bar_index + labelOffset)
+        label.set_text(midLabel, formatLabelText(curLevel, prevLevel, curPct, srHigh, srLow))
+
+// ══════════════════════════════════════════════════════════
+// 4. STRATEGY FINDER ENGINE (ONE-WAY 1 POSISI | ROUND-TRIP FEE | BAR CLOSED)
+// ══════════════════════════════════════════════════════════
+type Pos
+    int    side          // 1 = Long, -1 = Short
+    float  entry
+    float  qty
+    float  margin
+    float  feeIn         // Fee entry (Taker/Market) yang sudah dibayar saat buka posisi
+    float  tp            // na = tanpa TP harga
+    float  sl            // na = tanpa SL harga tetap
+    int    tpBarT        // 0 = bukan Bar TP | 3 = BarFix | 4 = BarProf | 5 = BarDir
+    int    tpBarN        // target N bar / candle searah untuk TP
+    int    dirCnt        // hitungan candle searah berturut-turut (bar closed)
+    string tpDesc        // label info TP pada ENTRY
+    int    slBarT        // 0 = bukan Bar SL | 3 = BarLoss | 4 = MaxBar | 5 = BarAdv
+    int    slBarN        // target N bar / candle lawan untuk SL
+    int    advCnt        // hitungan candle melawan arah berturut-turut (bar closed)
+    string slDesc        // label info SL pada ENTRY
+    float  actPct        // na = tanpa trailing
+    float  distPct
+    float  ext           // harga ekstrem sejak entry
+    float  tstop         // trailing stop aktif (na = belum aktif)
+    int    bar           // bar_index saat entry
+    int    entryTime     // timestamp bar SR saat entry
+    int    lvlStartTime  // timestamp bar ke-2 (mulai evaluasi TP/SL)
+    float  trTrigPx      // harga aktivasi trailing
+    int    trActTime     // timestamp saat trailing mulai aktif
+    float  trActStop     // nilai tstop pertama saat trailing mulai aktif
+
+type TradeRec
+    int    side
+    int    entryBar
+    int    entryTime
+    int    lvlStartTime
+    float  entryPx
+    float  tpPx
+    float  slPx
+    string tpDesc
+    string slDesc
+    bool   hasTrail
+    float  trTrigPx
+    int    trActTime
+    float  trActStop
+    float  trEndStop
+    int    exitBar
+    int    exitTime
+    float  exitPx
+    int    reason        // 1 = TP Harga, 2 = SL Harga, 3 = TRAIL, 4 = NEXT SR, 5 = BAR TP, 6 = BAR SL
+    string why           // 'TP', 'SL', 'TRAIL', 'NEXT SR', 'REV SR', 'TP BAR ...', 'SL B-...'
+    float  movePct       // % pergerakan harga murni
+    float  netPnl        // Net PnL bersih (USDT) setelah dikurangi Fee Entry + Fee Exit
+
+type Sim
+    string name
+    int    mode          // 0 Hedge | 1 One-Way Trend | 2 One-Way Counter
+    int    tpT           // 0 tanpa TP | 1 median % | 2 fixed % | 3 BarFix | 4 BarProf | 5 BarDir
+    float  tpV
+    int    slT           // 0 Next SR | 1 median % | 2 fixed % | 3 BarLoss | 4 MaxBar | 5 BarAdv
+    float  slV
+    bool   useTr
+    int    trU           // 1 median % | 2 fixed %
+    float  trA           // aktivasi trailing
+    float  trD           // jarak trailing
+    array<Pos>      book   = na
+    array<TradeRec> trades = na
+    float  bal      = 0.0
+    float  peakEq   = 0.0
+    float  peakBal  = 0.0
+    float  ddEq     = 0.0
+    float  ddBal    = 0.0
+    bool   liquid   = false
+    int    liqTime  = na
+    int    liqBar   = na
+    float  liqPx    = na
+    int    nLong    = 0
+    int    nShort   = 0
+    int    nWin     = 0
+    int    nLoss    = 0
+    int    nTp      = 0
+    int    nBarTp   = 0
+    int    nStop    = 0
+    int    nBarSl   = 0
+    int    nTrail   = 0
+    int    nNext    = 0
+    int    nSkip    = 0
+    float  fees     = 0.0
+    float  gp       = 0.0
+    float  gl       = 0.0
+    string key      = ''
+
+// Helper klasifikasi kategori strategi untuk Filter Leaderboard
+method isBarTp(Sim s) =>
+    s.tpT >= 3
+
+method isBarSl(Sim s) =>
+    s.slT >= 3
+
+method isBarAny(Sim s) =>
+    s.tpT >= 3 or s.slT >= 3
+
+method isBarBoth(Sim s) =>
+    s.tpT >= 3 and s.slT >= 3
+
+method isFixedPct(Sim s) =>
+    s.tpT < 3 and s.slT < 3 and (s.tpT == 2 or s.slT == 2 or (s.useTr and s.trU == 2))
+
+method isMedianPct(Sim s) =>
+    s.tpT < 3 and s.slT < 3 and (s.tpT == 1 or s.slT == 1 or (s.useTr and s.trU == 1))
+
+method isPctAny(Sim s) =>
+    s.tpT < 3 and s.slT < 3 and (s.tpT > 0 or s.slT > 0 or s.useTr)
+
+scanAt(Sim s, float px) =>
+    float f = 0.0
+    float n = 0.0
+    for p in s.book
+        f += p.side * p.qty * (px - p.entry)
+        n += p.qty * px
+    [f, n]
+
+method usedM(Sim s) =>
+    float t = 0.0
+    for p in s.book
+        t += p.margin
+    t
+
+method closeAt(Sim s, int i, float px, float feePct, int reason, string why) =>
+    Pos   p        = s.book.get(i)
+    float grossPnl = p.side * p.qty * (px - p.entry)
+    float feeOut   = p.qty * px * feePct / 100
+    // Saldo ditambah grossPnl dikurangi feeOut (karena p.feeIn sudah dipotong dari saldo saat entry)
+    s.bal  += grossPnl - feeOut
+    s.fees += feeOut
+    // Net PnL bulat per trade dikurangi total fee 2 arah (Entry + Exit)
+    float net = grossPnl - p.feeIn - feeOut
+    if net > 0
+        s.nWin += 1
+        s.gp   += net
+    else
+        s.nLoss += 1
+        s.gl    += -net
+    if reason == 1
+        s.nTp += 1
+    else if reason == 5
+        s.nTp    += 1
+        s.nBarTp += 1
+    else if reason == 2
+        s.nStop += 1
+    else if reason == 6
+        s.nStop  += 1
+        s.nBarSl += 1
+    else if reason == 3
+        s.nStop  += 1
+        s.nTrail += 1
+    else
+        s.nNext += 1
+
+    float movePct = p.side * (px - p.entry) / p.entry * 100
+    int   lvlSt   = na(p.lvlStartTime) ? time : p.lvlStartTime
+    s.trades.push(TradeRec.new(
+        p.side, p.bar, p.entryTime, lvlSt, p.entry, p.tp, p.sl, p.tpDesc, p.slDesc,
+        not na(p.actPct), p.trTrigPx, p.trActTime, p.trActStop, p.tstop,
+        bar_index, time, px, reason, why, movePct, net
+    ))
+    if s.trades.size() > maxVisTrades
+        s.trades.shift()
+
+    s.book.remove(i)
+    true
+
+method processBar(Sim s, bool newSr, float srPx, float prevSr, float medH, float medL, int nSamp, bool inWin) =>
+    if not s.liquid
+        float minEqPre = s.bal
+
+        // 1. Evaluasi posisi yang sudah terbuka dari bar sebelumnya
+        if s.book.size() > 0
+            [fLo, nLo] = scanAt(s, low)
+            [fHi, nHi] = scanAt(s, high)
+            float eqLo = s.bal + fLo
+            float eqHi = s.bal + fHi
+            minEqPre := math.min(eqLo, eqHi)
+
+            if eqLo <= nLo * mmrPct / 100 or eqHi <= nHi * mmrPct / 100
+                s.liquid  := true
+                s.liqTime := time
+                s.liqBar  := bar_index
+                s.liqPx   := close
+                s.bal     := 0.0
+                s.ddEq    := 100.0
+                s.ddBal   := 100.0
+                s.book.clear()
+            else
+                int i = s.book.size() - 1
+                while i >= 0
+                    Pos p = s.book.get(i)
+                    if na(p.lvlStartTime)
+                        p.lvlStartTime := time
+
+                    int barsHeld = bar_index - p.bar
+
+                    // Hitung candle searah & melawan arah hanya saat candle resmi tutup (barstate.isconfirmed)
+                    if barstate.isconfirmed
+                        bool isDirCandle = p.side == 1 ? close > open : close < open
+                        bool isAdvCandle = p.side == 1 ? close < open : close > open
+                        p.dirCnt := isDirCandle ? p.dirCnt + 1 : 0
+                        p.advCnt := isAdvCandle ? p.advCnt + 1 : 0
+
+                    float effStop = na
+                    if p.side == 1
+                        effStop := na(p.sl) ? p.tstop : (na(p.tstop) ? p.sl : math.max(p.sl, p.tstop))
+                    else
+                        effStop := na(p.sl) ? p.tstop : (na(p.tstop) ? p.sl : math.min(p.sl, p.tstop))
+                    bool stopHit = not na(effStop) and (p.side == 1 ? low <= effStop : high >= effStop)
+                    bool tpHit   = not na(p.tp) and (p.side == 1 ? high >= p.tp : low <= p.tp)
+
+                    // Evaluasi Bar-Based TP & Bar-Based SL murni saat candle resmi tutup (barstate.isconfirmed)
+                    bool   barTpHit = false
+                    string barTpWhy = ''
+                    bool   barSlHit = false
+                    string barSlWhy = ''
+
+                    if barstate.isconfirmed
+                        float closeGross  = p.side * p.qty * (close - p.entry)
+                        float closeFeeOut = p.qty * close * feeEntry / 100
+                        float closeNetPnl = closeGross - p.feeIn - closeFeeOut
+                        bool  isNetProf   = closeNetPnl > 0.0
+                        bool  isInLoss    = closeNetPnl <= 0.0
+
+                        if p.tpBarT == 3 and barsHeld >= p.tpBarN
+                            barTpHit := true
+                            barTpWhy := 'TP BAR (' + str.tostring(barsHeld) + 'b)'
+                        else if p.tpBarT == 4 and barsHeld >= p.tpBarN and isNetProf
+                            barTpHit := true
+                            barTpWhy := 'TP B-PROF (' + str.tostring(barsHeld) + 'b)'
+                        else if p.tpBarT == 5 and p.dirCnt >= p.tpBarN and isNetProf
+                            barTpHit := true
+                            barTpWhy := 'TP B-DIR (' + str.tostring(p.dirCnt) + 'c)'
+
+                        if p.slBarT == 3 and barsHeld >= p.slBarN and isInLoss
+                            barSlHit := true
+                            barSlWhy := 'SL B-LOSS (' + str.tostring(barsHeld) + 'b)'
+                        else if p.slBarT == 4 and barsHeld >= p.slBarN
+                            barSlHit := true
+                            barSlWhy := 'SL MAX-BAR (' + str.tostring(barsHeld) + 'b)'
+                        else if p.slBarT == 5 and p.advCnt >= p.slBarN and isInLoss
+                            barSlHit := true
+                            barSlWhy := 'SL B-ADV (' + str.tostring(p.advCnt) + 'c)'
+
+                    // Urutan konservatif: SL Harga/Trail -> Bar SL (Loss/Adv) -> TP Harga -> Bar TP -> MaxBar Timeout
+                    if stopHit
+                        bool isTr = not na(p.tstop) and (na(p.sl) or (p.side == 1 ? p.tstop >= p.sl : p.tstop <= p.sl))
+                        s.closeAt(i, effStop, feeEntry, isTr ? 3 : 2, isTr ? 'TRAIL' : 'SL')
+                    else if barSlHit and p.slBarT != 4
+                        s.closeAt(i, close, feeEntry, 6, barSlWhy)
+                    else if tpHit
+                        s.closeAt(i, p.tp, feeExit, 1, 'TP')
+                    else if barTpHit
+                        s.closeAt(i, close, feeEntry, 5, barTpWhy)
+                    else if barSlHit
+                        s.closeAt(i, close, feeEntry, 6, barSlWhy)
+                    else if not na(p.actPct)
+                        p.ext := p.side == 1 ? math.max(p.ext, high) : math.min(p.ext, low)
+                        float favPct = p.side == 1 ? (p.ext - p.entry) / p.entry * 100 : (p.entry - p.ext) / p.entry * 100
+                        if favPct >= p.actPct
+                            float ns = p.side == 1 ? p.ext * (1 - p.distPct / 100) : p.ext * (1 + p.distPct / 100)
+                            if na(p.tstop)
+                                p.tstop     := ns
+                                p.trActTime := time
+                                p.trActStop := ns
+                            else
+                                p.tstop := p.side == 1 ? math.max(p.tstop, ns) : math.min(p.tstop, ns)
+                    i -= 1
+
+        if not s.liquid
+            // 2. Penanganan Posisi Lama Saat Terbentuk SR Baru
+            if newSr and s.book.size() > 0
+                if s.slT == 0
+                    // Strategi SL NextSR: wajib tutup semua posisi lama di harga SR baru
+                    int j = s.book.size() - 1
+                    while j >= 0
+                        s.closeAt(j, srPx, feeEntry, 4, 'NEXT SR')
+                        j -= 1
+                else if s.mode != 0 and not na(prevSr)
+                    // Strategi One-Way Mode (Trend/Counter) dengan SL Tetap / Bar-SL: pastikan maksimal 1 posisi!
+                    bool upStepNow = srPx > prevSr
+                    int  newSigDir = s.mode == 1 ? (upStepNow ? 1 : -1) : (upStepNow ? -1 : 1)
+                    if oneWayRule == 'Tutup Posisi Lama & Buka Baru di SR Baru'
+                        int j = s.book.size() - 1
+                        while j >= 0
+                            s.closeAt(j, srPx, feeEntry, 4, 'NEXT SR')
+                            j -= 1
+                    else if oneWayRule == 'Reverse Jika Lawan Arah, Tahan Jika Searah'
+                        int j = s.book.size() - 1
+                        while j >= 0
+                            if s.book.get(j).side != newSigDir
+                                s.closeAt(j, srPx, feeEntry, 4, 'REV SR')
+                            j -= 1
+
+            // 3. Entry Baru Tepat di Bar & Harga SR Saat Terbentuk
+            if newSr and not na(prevSr) and inWin
+                bool needMed       = s.tpT == 1 or s.slT == 1 or (s.useTr and s.trU == 1)
+                int  maxPosAllowed = s.mode == 0 ? maxOpen : 1
+                if not needMed or nSamp >= minLevels
+                    for k = 0 to 1
+                        int  dir     = k == 0 ? 1 : -1
+                        bool upStep  = srPx > prevSr
+                        bool allowed = s.mode == 0 ? true : (s.mode == 1 ? (upStep ? dir == 1 : dir == -1) : (upStep ? dir == -1 : dir == 1))
+                        if allowed
+                            float favM    = dir == 1 ? medH : medL
+                            float advM    = dir == 1 ? medL : medH
+                            bool  isBarTp = s.tpT >= 3
+                            bool  isBarSl = s.slT >= 3
+                            float tpP     = s.tpT == 1 ? favM * s.tpV : (s.tpT == 2 ? s.tpV : na)
+                            float slP     = s.slT == 1 ? advM * s.slV : (s.slT == 2 ? s.slV : na)
+                            float acP     = s.useTr ? (s.trU == 1 ? favM * s.trA : s.trA) : na
+                            float dsP     = s.useTr ? (s.trU == 1 ? favM * s.trD : s.trD) : na
+                            bool  ok      = (s.tpT == 0 or isBarTp or tpP > 0) and (s.slT == 0 or isBarSl or slP > 0) and (not s.useTr or (acP > 0 and dsP > 0))
+
+                            float base     = marginBasis == 'Initial Balance' ? initCap : s.bal
+                            float mrg      = base * marginPct / 100
+                            float notional = mrg * leverage
+                            float feeIn    = notional * feeEntry / 100
+                            [fC, nC]       = scanAt(s, close)
+                            float availEq  = s.bal + fC - s.usedM()
+
+                            if ok
+                                if mrg > 0 and mrg + feeIn <= availEq and s.book.size() < maxPosAllowed
+                                    float  qty      = notional / srPx
+                                    float  tpPx     = na(tpP) ? na : srPx * (1 + dir * tpP / 100)
+                                    float  slPx     = na(slP) ? na : srPx * (1 - dir * slP / 100)
+                                    float  trTrigPx = na(acP) ? na : srPx * (1 + dir * acP / 100)
+                                    int    bTpType  = isBarTp ? s.tpT : 0
+                                    int    bTpTgt   = isBarTp ? int(s.tpV) : 0
+                                    int    bSlType  = isBarSl ? s.slT : 0
+                                    int    bSlTgt   = isBarSl ? int(s.slV) : 0
+                                    string tpLabel  = not na(tpPx) ? str.tostring(tpPx, format.mintick) : (s.useTr ? 'TRAIL' : (bTpType == 3 ? 'BarFix(' + str.tostring(bTpTgt) + 'b)' : (bTpType == 4 ? 'BarProf(>=' + str.tostring(bTpTgt) + 'b)' : (bTpType == 5 ? 'BarDir(' + str.tostring(bTpTgt) + 'c)' : '-'))))
+                                    string slLabel  = not na(slPx) ? str.tostring(slPx, format.mintick) : (bSlType == 3 ? 'BarLoss(>=' + str.tostring(bSlTgt) + 'b)' : (bSlType == 4 ? 'MaxBar(' + str.tostring(bSlTgt) + 'b)' : (bSlType == 5 ? 'BarAdv(' + str.tostring(bSlTgt) + 'c)' : 'NextSR')))
+                                    s.book.push(Pos.new(dir, srPx, qty, mrg, feeIn, tpPx, slPx, bTpType, bTpTgt, 0, tpLabel, bSlType, bSlTgt, 0, slLabel, acP, dsP, srPx, float(na), bar_index, time, int(na), trTrigPx, int(na), float(na)))
+                                    s.bal  -= feeIn
+                                    s.fees += feeIn
+                                    if dir == 1
+                                        s.nLong += 1
+                                    else
+                                        s.nShort += 1
+                                else
+                                    s.nSkip += 1
+
+            // 4. Max Drawdown (equity worst-case & balance)
+            [fCl, nCl] = scanAt(s, close)
+            float eqClose = s.bal + fCl
+            float worst   = math.min(minEqPre, eqClose)
+            s.ddEq    := math.max(s.ddEq, s.peakEq > 0 ? (s.peakEq - worst) / s.peakEq * 100 : 0.0)
+            s.peakEq  := math.max(s.peakEq, eqClose)
+            s.ddBal   := math.max(s.ddBal, s.peakBal > 0 ? (s.peakBal - s.bal) / s.peakBal * 100 : 0.0)
+            s.peakBal := math.max(s.peakBal, s.bal)
+    true
+
+method netPct(Sim s) =>
+    [f, n] = scanAt(s, close)
+    ((s.liquid ? 0.0 : s.bal + f) - initCap) / initCap * 100
+
+method pf(Sim s) =>
+    s.gl > 0 ? s.gp / s.gl : (s.gp > 0 ? 99.0 : 0.0)
+
+method score(Sim s) =>
+    int   n  = s.nWin + s.nLoss
+    float nt = s.netPct()
+    n == 0 ? -1000000000.0 : (rankBy == 'Net Profit %' ? nt : (rankBy == 'Net / Max DD' ? nt / math.max(s.ddEq, 1.0) : s.pf()))
+
+mk(string nm, string key, int mode, int tpT, float tpV, int slT, float slV, bool useTr, int trU, float trA, float trD) =>
+    Sim s = Sim.new(name = nm, mode = mode, tpT = tpT, tpV = tpV, slT = slT, slV = slV, useTr = useTr, trU = trU, trA = trA, trD = trD, key = key)
+    s.book    := array.new<Pos>()
+    s.trades  := array.new<TradeRec>()
+    s.bal     := initCap
+    s.peakEq  := initCap
+    s.peakBal := initCap
+    s
+
+var array<Sim>   sims  = array.new<Sim>()
+var array<float> hiArr = array.new<float>()
+var array<float> loArr = array.new<float>()
+
+addSet(string pfx, int mode) =>
+    string f1 = str.tostring(fixed1, '0.0#')
+    string f2 = str.tostring(fixed2, '0.0#')
+    string f3 = str.tostring(fixed3, '0.0#')
+    string b1 = str.tostring(barTp1)
+    string b2 = str.tostring(barTp2)
+    string bd = str.tostring(barTpDir)
+    string s1 = str.tostring(slBar1)
+    string s2 = str.tostring(slBar2)
+    string sa = str.tostring(slBarAdv)
+    string p  = pfx + ' | '
+
+    // 1. Strategi Base Persen (Median % & Fixed %)
+    sims.push(mk(p + 'TP 0.5M | SL NextSR', p + 'TP 0.5M | SL NextSR', mode, 1, 0.5, 0, 0.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP 1M | SL NextSR', p + 'TP 1M | SL NextSR', mode, 1, 1.0, 0, 0.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'NextSR only', p + 'NextSR only', mode, 0, 0.0, 0, 0.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP 0.5M | SL 1M', p + 'TP 0.5M | SL 1M', mode, 1, 0.5, 1, 1.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP 1M | SL 1M', p + 'TP 1M | SL 1M', mode, 1, 1.0, 1, 1.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP 1M | SL 0.5M', p + 'TP 1M | SL 0.5M', mode, 1, 1.0, 1, 0.5, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP F1 (' + f1 + '%) | SL F1 (' + f1 + '%)', p + 'TP F1 | SL F1', mode, 2, fixed1, 2, fixed1, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP F2 (' + f2 + '%) | SL F1 (' + f1 + '%)', p + 'TP F2 | SL F1', mode, 2, fixed2, 2, fixed1, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP F3 (' + f3 + '%) | SL F2 (' + f2 + '%)', p + 'TP F3 | SL F2', mode, 2, fixed3, 2, fixed2, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'TP F2 (' + f2 + '%) | SL NextSR', p + 'TP F2 | SL NextSR', mode, 2, fixed2, 0, 0.0, false, 1, 0.0, 0.0))
+    sims.push(mk(p + 'Trail 0.5M/0.5M | SL NextSR', p + 'Trail 0.5M/0.5M | SL NextSR', mode, 0, 0.0, 0, 0.0, true, 1, 0.5, 0.5))
+    sims.push(mk(p + 'Trail 1M/0.5M | SL NextSR', p + 'Trail 1M/0.5M | SL NextSR', mode, 0, 0.0, 0, 0.0, true, 1, 1.0, 0.5))
+    sims.push(mk(p + 'Trail F2/F1 (' + f2 + '%/' + f1 + '%) | SL F1 (' + f1 + '%)', p + 'Trail F2/F1 | SL F1', mode, 0, 0.0, 2, fixed1, true, 2, fixed2, fixed1))
+
+    // 2. Strategi Base Bar - TP (dengan SL NextSR / SL Fixed %)
+    if incBarTp or str.contains(selStrategy, 'BarFix') or str.contains(selStrategy, 'BarProf') or str.contains(selStrategy, 'BarDir')
+        sims.push(mk(p + 'TP BarFix B1 (' + b1 + 'b) | SL NextSR', p + 'TP BarFix B1 | SL NextSR', mode, 3, barTp1, 0, 0.0, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarFix B2 (' + b2 + 'b) | SL NextSR', p + 'TP BarFix B2 | SL NextSR', mode, 3, barTp2, 0, 0.0, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarFix B1 (' + b1 + 'b) | SL F1 (' + f1 + '%)', p + 'TP BarFix B1 | SL F1', mode, 3, barTp1, 2, fixed1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B1 (>=' + b1 + 'b) | SL NextSR', p + 'TP BarProf B1 | SL NextSR', mode, 4, barTp1, 0, 0.0, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B2 (>=' + b2 + 'b) | SL NextSR', p + 'TP BarProf B2 | SL NextSR', mode, 4, barTp2, 0, 0.0, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B1 (>=' + b1 + 'b) | SL F1 (' + f1 + '%)', p + 'TP BarProf B1 | SL F1', mode, 4, barTp1, 2, fixed1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarDir BD (' + bd + 'c) | SL NextSR', p + 'TP BarDir BD | SL NextSR', mode, 5, barTpDir, 0, 0.0, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarDir BD (' + bd + 'c) | SL F1 (' + f1 + '%)', p + 'TP BarDir BD | SL F1', mode, 5, barTpDir, 2, fixed1, false, 1, 0.0, 0.0))
+
+    // 3. Strategi Base Bar - SL (dengan TP Persen / Trail)
+    if incBarSl or str.contains(selStrategy, 'BarLoss') or str.contains(selStrategy, 'MaxBar') or str.contains(selStrategy, 'BarAdv')
+        sims.push(mk(p + 'TP 1M | SL BarLoss S1 (>=' + s1 + 'b)', p + 'TP 1M | SL BarLoss S1', mode, 1, 1.0, 3, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP F2 (' + f2 + '%) | SL BarLoss S1 (>=' + s1 + 'b)', p + 'TP F2 | SL BarLoss S1', mode, 2, fixed2, 3, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'Trail 1M/0.5M | SL BarLoss S1 (>=' + s1 + 'b)', p + 'Trail 1M/0.5M | SL BarLoss S1', mode, 0, 0.0, 3, slBar1, true, 1, 1.0, 0.5))
+        sims.push(mk(p + 'TP 1M | SL MaxBar S1 (' + s1 + 'b)', p + 'TP 1M | SL MaxBar S1', mode, 1, 1.0, 4, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP F2 (' + f2 + '%) | SL MaxBar S2 (' + s2 + 'b)', p + 'TP F2 | SL MaxBar S2', mode, 2, fixed2, 4, slBar2, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP 1M | SL BarAdv SA (' + sa + 'c)', p + 'TP 1M | SL BarAdv SA', mode, 1, 1.0, 5, slBarAdv, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP F2 (' + f2 + '%) | SL BarAdv SA (' + sa + 'c)', p + 'TP F2 | SL BarAdv SA', mode, 2, fixed2, 5, slBarAdv, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'Trail F2/F1 (' + f2 + '%/' + f1 + '%) | SL BarAdv SA (' + sa + 'c)', p + 'Trail F2/F1 | SL BarAdv SA', mode, 0, 0.0, 5, slBarAdv, true, 2, fixed2, fixed1))
+
+    // 4. Strategi Base Bar Murni (TP Bar + SL Bar)
+    if (incBarTp and incBarSl) or str.contains(selStrategy, 'Bar')
+        sims.push(mk(p + 'TP BarFix B2 (' + b2 + 'b) | SL BarLoss S1 (>=' + s1 + 'b)', p + 'TP BarFix B2 | SL BarLoss S1', mode, 3, barTp2, 3, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B1 (>=' + b1 + 'b) | SL BarLoss S1 (>=' + s1 + 'b)', p + 'TP BarProf B1 | SL BarLoss S1', mode, 4, barTp1, 3, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B1 (>=' + b1 + 'b) | SL MaxBar S2 (' + s2 + 'b)', p + 'TP BarProf B1 | SL MaxBar S2', mode, 4, barTp1, 4, slBar2, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarProf B1 (>=' + b1 + 'b) | SL BarAdv SA (' + sa + 'c)', p + 'TP BarProf B1 | SL BarAdv SA', mode, 4, barTp1, 5, slBarAdv, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarDir BD (' + bd + 'c) | SL BarLoss S1 (>=' + s1 + 'b)', p + 'TP BarDir BD | SL BarLoss S1', mode, 5, barTpDir, 3, slBar1, false, 1, 0.0, 0.0))
+        sims.push(mk(p + 'TP BarDir BD (' + bd + 'c) | SL BarAdv SA (' + sa + 'c)', p + 'TP BarDir BD | SL BarAdv SA', mode, 5, barTpDir, 5, slBarAdv, false, 1, 0.0, 0.0))
+    true
+
+if barstate.isfirst
+    if incTrend or str.startswith(selStrategy, 'TREND')
+        addSet('TREND', 1)
+    if incCounter or str.startswith(selStrategy, 'COUNTER')
+        addSet('COUNTER', 2)
+    if incHedge or str.startswith(selStrategy, 'HEDGE')
+        addSet('HEDGE', 0)
+
+// Eksekusi simulasi disinkronkan langsung dengan activeSr
+bool  inWin    = btDays == 0 or time >= timenow - btDays * 86400000
+var float simLevel = na
+var float simHi    = na
+var float simLo    = na
+
+bool  newSr  = false
+float prevSr = simLevel
+
+if na(simLevel)
+    simLevel := activeSr
+else if activeSr != simLevel
+    if not na(simHi) and not na(simLo) and simLevel != 0
+        array.push(hiArr, math.max((simHi - simLevel) / simLevel * 100, 0.0))
+        array.push(loArr, math.max((simLevel - simLo) / simLevel * 100, 0.0))
+    simLevel := activeSr
+    simHi    := na
+    simLo    := na
+    newSr    := true
+else
+    simHi := na(simHi) ? high : math.max(simHi, high)
+    simLo := na(simLo) ? low  : math.min(simLo, low)
+
+float medH = array.size(hiArr) > 0 ? array.median(hiArr) : na
+float medL = array.size(loArr) > 0 ? array.median(loArr) : na
+int   nSmp = array.size(hiArr)
+
+for s in sims
+    s.processBar(newSr, activeSr, prevSr, medH, medL, nSmp, inWin)
+
+// ══════════════════════════════════════════════════════════
+// 5. VISUALISASI TRADE (MENGGUNAKAN XLOC.BAR_TIME BEBAS LIMIT) & TABEL
+// ══════════════════════════════════════════════════════════
+var array<label> stratVisLabels = array.new<label>()
+var array<line>  stratVisLines  = array.new<line>()
+
+ldPosition = switch ldPosStr
+    'Top Right'    => position.top_right
+    'Top Left'     => position.top_left
+    'Bottom Right' => position.bottom_right
+    'Bottom Left'  => position.bottom_left
+    => position.top_right
+
+dtPosition = switch dtPosStr
+    'Top Right'    => position.top_right
+    'Top Left'     => position.top_left
+    'Bottom Right' => position.bottom_right
+    'Bottom Left'  => position.bottom_left
+    => position.bottom_right
+
+var table ldTbl = table.new(ldPosition, 9, topN + 9, bgcolor = #131722, border_width = 1, border_color = #363a45, frame_width = 1, frame_color = #363a45)
+var table dtTbl = table.new(dtPosition, 2, 24, bgcolor = #131722, border_width = 1, border_color = #363a45, frame_width = 1, frame_color = #363a45)
+
+fmt(float v, string f) =>
+    na(v) ? '-' : str.tostring(v, f)
+
+tc(table t, int c, int r, string tx, color col, string al) =>
+    table.cell(t, c, r, tx, text_color = col, text_halign = al == 'l' ? text.align_left : (al == 'r' ? text.align_right : text.align_center), text_size = size.small, bgcolor = #131722)
+
+tcBg(table t, int c, int r, string tx, color col, string al, color bg) =>
+    table.cell(t, c, r, tx, text_color = col, text_halign = al == 'l' ? text.align_left : (al == 'r' ? text.align_right : text.align_center), text_size = size.small, bgcolor = bg)
+
+dtRow(int r, string k, string v, color vc) =>
+    tc(dtTbl, 0, r, k, #787b86, 'l')
+    tc(dtTbl, 1, r, v, vc, 'r')
+
+// Evaluasi apakah strategi lolos filter Leaderboard yang dipilih
+passFilter(Sim cand) =>
+    switch stratFilter
+        'Semua Strategi'                        => true
+        'Base Bar (Semua TP / SL Bar)'          => cand.isBarAny()
+        'Base Bar Murni (TP Bar + SL Bar)'      => cand.isBarBoth()
+        'Base Bar - TP Saja'                    => cand.isBarTp()
+        'Base Bar - SL Saja'                    => cand.isBarSl()
+        'Base Persen (Semua Fixed % & Median %)' => cand.isPctAny()
+        'Base Persen Tetap (Fixed F1/F2/F3 %)'  => cand.isFixedPct()
+        'Base Persen Median (0.5M / 1M %)'      => cand.isMedianPct()
+        => true
+
+if barstate.islast and array.size(sims) > 0
+    // Bersihkan objek visual strategi dari tick sebelumnya
+    for lb in stratVisLabels
+        label.delete(lb)
+    stratVisLabels.clear()
+
+    for ln in stratVisLines
+        line.delete(ln)
+    stratVisLines.clear()
+
+    // Urutkan peringkat seluruh strategi
+    array<float> mt = array.new<float>()
+    for s in sims
+        mt.push(s.score())
+    array<int> ord = array.sort_indices(mt, order.descending)
+
+    // Kumpulkan strategi sesuai filter Leaderboard & cari pemenang per kategori
+    array<Sim> filtSims  = array.new<Sim>()
+    array<int> filtRanks = array.new<int>()
+
+    Sim bestOverallSim   = array.get(sims, array.get(ord, 0))
+    int bestOverallRank  = 1
+    Sim bestBarBothSim   = na
+    int bestBarBothRank  = na
+    Sim bestBarTpSim     = na
+    int bestBarTpRank    = na
+    Sim bestBarSlSim     = na
+    int bestBarSlRank    = na
+    Sim bestFixedPctSim  = na
+    int bestFixedPctRank = na
+    Sim bestMedPctSim    = na
+    int bestMedPctRank   = na
+
+    for r = 0 to array.size(sims) - 1
+        Sim cand = array.get(sims, array.get(ord, r))
+        if passFilter(cand)
+            filtSims.push(cand)
+            filtRanks.push(r + 1)
+        if cand.isBarBoth() and na(bestBarBothSim)
+            bestBarBothSim  := cand
+            bestBarBothRank := r + 1
+        if cand.isBarTp() and na(bestBarTpSim)
+            bestBarTpSim  := cand
+            bestBarTpRank := r + 1
+        if cand.isBarSl() and na(bestBarSlSim)
+            bestBarSlSim  := cand
+            bestBarSlRank := r + 1
+        if cand.isFixedPct() and na(bestFixedPctSim)
+            bestFixedPctSim  := cand
+            bestFixedPctRank := r + 1
+        if cand.isMedianPct() and na(bestMedPctSim)
+            bestMedPctSim  := cand
+            bestMedPctRank := r + 1
+
+    // Cari strategi yang dipilih pada dropdown (untuk Visual Chart & Tabel Detail)
+    Sim visSim  = na
+    int selRank = na
+
+    if selStrategy == 'Top #1 Sesuai Filter Leaderboard (Otomatis)'
+        visSim  := array.size(filtSims) > 0 ? array.get(filtSims, 0) : bestOverallSim
+        selRank := array.size(filtRanks) > 0 ? array.get(filtRanks, 0) : bestOverallRank
+    else if selStrategy == 'Top #1 Semua Strategi (Otomatis)'
+        visSim  := bestOverallSim
+        selRank := bestOverallRank
+    else if selStrategy == 'Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)'
+        visSim  := not na(bestBarBothSim) ? bestBarBothSim : bestOverallSim
+        selRank := not na(bestBarBothRank) ? bestBarBothRank : bestOverallRank
+    else if selStrategy == 'Top #1 Base Bar TP (Bar TP Terbaik)'
+        visSim  := not na(bestBarTpSim) ? bestBarTpSim : bestOverallSim
+        selRank := not na(bestBarTpRank) ? bestBarTpRank : bestOverallRank
+    else if selStrategy == 'Top #1 Base Bar SL (Bar SL Terbaik)'
+        visSim  := not na(bestBarSlSim) ? bestBarSlSim : bestOverallSim
+        selRank := not na(bestBarSlRank) ? bestBarSlRank : bestOverallRank
+    else if selStrategy == 'Top #1 Base Persen Tetap (Fixed % Terbaik)'
+        visSim  := not na(bestFixedPctSim) ? bestFixedPctSim : bestOverallSim
+        selRank := not na(bestFixedPctRank) ? bestFixedPctRank : bestOverallRank
+    else if selStrategy == 'Top #1 Base Persen Median (Median % Terbaik)'
+        visSim  := not na(bestMedPctSim) ? bestMedPctSim : bestOverallSim
+        selRank := not na(bestMedPctRank) ? bestMedPctRank : bestOverallRank
+    else if selStrategy != 'None'
+        for r = 0 to array.size(sims) - 1
+            Sim candidate = array.get(sims, array.get(ord, r))
+            if candidate.key == selStrategy
+                visSim  := candidate
+                selRank := r + 1
+                break
+
+    // Render Visual Label & Garis menggunakan xloc.bar_time (Bebas Limit Historical Offset)
+    if not na(visSim) and visMode != 'Sembunyikan Visual Chart'
+        bool vEntry = visMode == 'Semua (Entry + TP + SL + Trail + Exit)' or visMode == 'Ringkas (Entry + Exit + Trail)' or visMode == 'Level Target Saja (Entry + TP + SL + Trail)' or visMode == 'Hanya Entry & Exit' or (visMode == 'Custom (Sesuai Checkbox)' and showVisEntry)
+        bool vTp    = visMode == 'Semua (Entry + TP + SL + Trail + Exit)' or visMode == 'Level Target Saja (Entry + TP + SL + Trail)' or (visMode == 'Custom (Sesuai Checkbox)' and showVisTp)
+        bool vSl    = visMode == 'Semua (Entry + TP + SL + Trail + Exit)' or visMode == 'Level Target Saja (Entry + TP + SL + Trail)' or (visMode == 'Custom (Sesuai Checkbox)' and showVisSl)
+        bool vTrail = visMode == 'Semua (Entry + TP + SL + Trail + Exit)' or visMode == 'Ringkas (Entry + Exit + Trail)' or visMode == 'Level Target Saja (Entry + TP + SL + Trail)' or (visMode == 'Custom (Sesuai Checkbox)' and showVisTrail)
+        bool vExit  = visMode == 'Semua (Entry + TP + SL + Trail + Exit)' or visMode == 'Ringkas (Entry + Exit + Trail)' or visMode == 'Hanya Entry & Exit' or (visMode == 'Custom (Sesuai Checkbox)' and showVisExit)
+
+        // 1. Visualisasi Trade yang Sudah Selesai (Closed Trades)
+        for tr in visSim.trades
+            string sideTag = tr.side == 1 ? 'BUY' : 'SELL'
+            color  entCol  = tr.side == 1 ? entryBuyCol : entrySellCol
+
+            if vEntry
+                string entTxt = 'ENTRY ' + sideTag + ' @ ' + str.tostring(tr.entryPx, format.mintick) + '\nTP: ' + tr.tpDesc + ' | SL: ' + tr.slDesc
+                stratVisLabels.push(label.new(tr.entryTime, tr.entryPx, entTxt, xloc = xloc.bar_time, style = tr.side == 1 ? label.style_label_up : label.style_label_down, color = entCol, textcolor = color.white, size = tradeLblSz))
+
+            if vTp and not na(tr.tpPx)
+                stratVisLines.push(line.new(tr.lvlStartTime, tr.tpPx, tr.exitTime, tr.tpPx, xloc = xloc.bar_time, color = color.new(tpVisCol, 30), style = line.style_dashed, width = 1))
+
+            if vSl and not na(tr.slPx)
+                stratVisLines.push(line.new(tr.lvlStartTime, tr.slPx, tr.exitTime, tr.slPx, xloc = xloc.bar_time, color = color.new(slVisCol, 30), style = line.style_dashed, width = 1))
+
+            if vTrail and tr.hasTrail
+                if not na(tr.trActTime) and not na(tr.trActStop)
+                    stratVisLines.push(line.new(tr.trActTime, tr.trActStop, tr.exitTime, tr.trEndStop, xloc = xloc.bar_time, color = trailVisCol, style = line.style_solid, width = 2))
+                    string trOnTxt = 'TRAIL ON (' + sideTag + ')\nStop @ ' + str.tostring(tr.trActStop, format.mintick)
+                    stratVisLabels.push(label.new(tr.trActTime, tr.trActStop, trOnTxt, xloc = xloc.bar_time, style = tr.side == 1 ? label.style_label_up : label.style_label_down, color = trailVisCol, textcolor = color.white, size = tradeLblSz))
+                else if not na(tr.trTrigPx)
+                    stratVisLines.push(line.new(tr.lvlStartTime, tr.trTrigPx, tr.exitTime, tr.trTrigPx, xloc = xloc.bar_time, color = color.new(trailVisCol, 50), style = line.style_dotted, width = 1))
+
+            if showTradeLine
+                color lnCol = tr.netPnl >= 0 ? tpVisCol : slVisCol
+                stratVisLines.push(line.new(tr.entryTime, tr.entryPx, tr.exitTime, tr.exitPx, xloc = xloc.bar_time, color = lnCol, style = line.style_dotted, width = 1))
+
+            if vExit
+                color  exCol   = tr.reason == 1 ? (tr.netPnl >= 0 ? tpVisCol : slVisCol) : (tr.reason == 5 ? (tr.netPnl >= 0 ? tpVisCol : slVisCol) : (tr.reason == 2 or tr.reason == 6 ? (tr.netPnl >= 0 ? tpVisCol : slVisCol) : (tr.reason == 3 ? trailVisCol : nextVisCol)))
+                string signM   = tr.movePct > 0 ? '+' : ''
+                string signN   = tr.netPnl > 0 ? '+' : ''
+                string exTitle = tr.why + ' ' + sideTag + ' @ ' + str.tostring(tr.exitPx, format.mintick)
+                string exStats = signM + str.tostring(tr.movePct, '0.00') + '% (Net: ' + signN + str.tostring(tr.netPnl, '0.00') + ' USDT)'
+                bool   above   = tr.exitPx >= tr.entryPx
+                stratVisLabels.push(label.new(tr.exitTime, tr.exitPx, exTitle + '\n' + exStats, xloc = xloc.bar_time, style = above ? label.style_label_down : label.style_label_up, color = exCol, textcolor = color.white, size = tradeLblSz))
+
+        // 2. Visualisasi Posisi yang Sedang Terbuka (Floating Net PnL sudah dikurangi Round-Trip Fee)
+        if visSim.book.size() > 0
+            int barMs     = math.max(timeframe.in_seconds() * 1000, 60000)
+            int rightTime = time + barMs * 3
+            for p in visSim.book
+                string sTag        = p.side == 1 ? 'BUY' : 'SELL'
+                color  eCol        = p.side == 1 ? entryBuyCol : entrySellCol
+                float  flPct       = p.side * (close - p.entry) / p.entry * 100
+                float  estFeeOut   = p.qty * close * feeEntry / 100
+                float  flNetUsdt   = p.side * p.qty * (close - p.entry) - p.feeIn - estFeeOut
+                int    openLvlFrom = not na(p.lvlStartTime) ? p.lvlStartTime : math.min(p.entryTime + barMs, rightTime)
+                int    heldNow     = bar_index - p.bar
+
+                if vEntry
+                    string tpProg     = p.tpBarT == 3 or p.tpBarT == 4 ? ' | TPBar: ' + str.tostring(heldNow) + '/' + str.tostring(p.tpBarN) : (p.tpBarT == 5 ? ' | Dir: ' + str.tostring(p.dirCnt) + '/' + str.tostring(p.tpBarN) : '')
+                    string slProg     = p.slBarT == 3 or p.slBarT == 4 ? ' | SLBar: ' + str.tostring(heldNow) + '/' + str.tostring(p.slBarN) : (p.slBarT == 5 ? ' | Adv: ' + str.tostring(p.advCnt) + '/' + str.tostring(p.slBarN) : '')
+                    string flTxt      = showVisOpen ? '\nFloat: ' + (flPct >= 0 ? '+' : '') + str.tostring(flPct, '0.00') + '% (Net: ' + (flNetUsdt >= 0 ? '+' : '') + str.tostring(flNetUsdt, '0.00') + ' USDT)' + tpProg + slProg : ''
+                    string openEntTxt = 'ENTRY ' + sTag + ' @ ' + str.tostring(p.entry, format.mintick) + '\nTP: ' + p.tpDesc + ' | SL: ' + p.slDesc + flTxt
+                    stratVisLabels.push(label.new(p.entryTime, p.entry, openEntTxt, xloc = xloc.bar_time, style = p.side == 1 ? label.style_label_up : label.style_label_down, color = eCol, textcolor = color.white, size = tradeLblSz))
+
+                if showVisOpen
+                    if vTp and not na(p.tp)
+                        stratVisLines.push(line.new(openLvlFrom, p.tp, rightTime, p.tp, xloc = xloc.bar_time, color = tpVisCol, style = line.style_dashed, width = 1))
+                        stratVisLabels.push(label.new(rightTime, p.tp, 'TARGET TP (' + sTag + ') @ ' + str.tostring(p.tp, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = tpVisCol, textcolor = color.white, size = tradeLblSz))
+
+                    if vSl and not na(p.sl)
+                        stratVisLines.push(line.new(openLvlFrom, p.sl, rightTime, p.sl, xloc = xloc.bar_time, color = slVisCol, style = line.style_dashed, width = 1))
+                        stratVisLabels.push(label.new(rightTime, p.sl, 'LEVEL SL (' + sTag + ') @ ' + str.tostring(p.sl, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = slVisCol, textcolor = color.white, size = tradeLblSz))
+
+                    if vTrail and not na(p.actPct)
+                        if not na(p.tstop)
+                            int startTrTime = not na(p.trActTime) ? p.trActTime : openLvlFrom
+                            stratVisLines.push(line.new(startTrTime, p.tstop, rightTime, p.tstop, xloc = xloc.bar_time, color = trailVisCol, style = line.style_solid, width = 2))
+                            stratVisLabels.push(label.new(rightTime, p.tstop, 'TRAIL SL (' + sTag + ') @ ' + str.tostring(p.tstop, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = trailVisCol, textcolor = color.white, size = tradeLblSz))
+                        else if not na(p.trTrigPx)
+                            stratVisLines.push(line.new(openLvlFrom, p.trTrigPx, rightTime, p.trTrigPx, xloc = xloc.bar_time, color = color.new(trailVisCol, 35), style = line.style_dotted, width = 1))
+                            stratVisLabels.push(label.new(rightTime, p.trTrigPx, 'TRAIL TRIGGER (' + sTag + ') @ ' + str.tostring(p.trTrigPx, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(trailVisCol, 25), textcolor = color.white, size = tradeLblSz))
+
+        // 3. Penanda Likuidasi
+        if visSim.liquid and not na(visSim.liqTime)
+            stratVisLabels.push(label.new(visSim.liqTime, visSim.liqPx, 'LIQUIDATED\n' + visSim.name, xloc = xloc.bar_time, style = label.style_label_down, color = bearColor, textcolor = color.white, size = size.normal))
+
+    // Pengaturan visibilitas Tabel berdasarkan dropdown tableMode
+    bool showLd = tableMode == 'Keduanya (Top + Detail)' or tableMode == 'Top Strategy (Leaderboard Saja)'
+    bool showDt = tableMode == 'Keduanya (Top + Detail)' or tableMode == 'Detail Strategy (Detail Saja)'
+
+    color good = #089981
+    color bad  = #f23645
+    color neu  = #d1d4dc
+    color dim  = #787b86
+
+    // ── Render Tabel Leaderboard + Perbandingan Terbaik ─────────
+    if showLd
+        table.cell(ldTbl, 0, 0, 'LEADERBOARD | Filter: ' + stratFilter + ' (' + str.tostring(array.size(filtSims)) + '/' + str.tostring(array.size(sims)) + ') | Rank: ' + rankBy, text_color = color.white, text_halign = text.align_center, text_size = size.small, bgcolor = #2962ff)
+        table.merge_cells(ldTbl, 0, 0, 8, 0)
+
+        string[] hd = array.from('#', 'Strategi', 'Net %', 'DD Eq %', 'DD Bal %', 'Win %', 'Trade', 'PF', 'Liq')
+        for c = 0 to 8
+            tc(ldTbl, c, 1, array.get(hd, c), dim, c == 1 ? 'l' : 'c')
+
+        int shown = math.min(topN, array.size(filtSims))
+        for r = 0 to topN - 1
+            if r < shown
+                Sim   b       = array.get(filtSims, r)
+                int   glbRank = array.get(filtRanks, r)
+                float nt      = b.netPct()
+                int   n       = b.nWin + b.nLoss
+                bool  isSel   = not na(visSim) and b.key == visSim.key
+                color rowCol  = isSel ? #ffb74d : (b.isBarBoth() ? #00e676 : (b.isBarTp() ? #4dd0e1 : (b.isBarSl() ? #ff8a65 : (b.isFixedPct() ? #ce93d8 : neu))))
+                string nmTx   = (isSel ? '[PILIH] ' : '') + b.name
+                tc(ldTbl, 0, r + 2, str.tostring(glbRank), rowCol, 'c')
+                tc(ldTbl, 1, r + 2, nmTx, rowCol, 'l')
+                tc(ldTbl, 2, r + 2, fmt(nt, '0.00'), nt >= 0 ? good : bad, 'r')
+                tc(ldTbl, 3, r + 2, fmt(b.ddEq, '0.00'), b.ddEq > 0 ? bad : neu, 'r')
+                tc(ldTbl, 4, r + 2, fmt(b.ddBal, '0.00'), b.ddBal > 0 ? bad : neu, 'r')
+                tc(ldTbl, 5, r + 2, n > 0 ? fmt(b.nWin * 100.0 / n, '0.0') : '-', neu, 'r')
+                tc(ldTbl, 6, r + 2, str.tostring(n), neu, 'r')
+                tc(ldTbl, 7, r + 2, fmt(b.pf(), '0.00'), b.pf() >= 1 ? good : bad, 'r')
+                tc(ldTbl, 8, r + 2, b.liquid ? 'YA' : '-', b.liquid ? bad : dim, 'c')
+            else
+                for c = 0 to 8
+                    tc(ldTbl, c, r + 2, '-', dim, 'c')
+
+        // Bagian Ringkasan Pemenang per Kategori (Base Bar vs Base Persen)
+        int sumRow = topN + 2
+        table.cell(ldTbl, 0, sumRow, 'PEMENANG TERBAIK: BASE BAR (TP+SL / TP / SL) vs BASE PERSEN (FIXED % / MEDIAN %)', text_color = color.white, text_halign = text.align_center, text_size = size.small, bgcolor = #1e222d)
+        table.merge_cells(ldTbl, 0, sumRow, 8, sumRow)
+
+        // Baris 1: Terbaik Keseluruhan (#1)
+        if not na(bestOverallSim)
+            float ntO = bestOverallSim.netPct()
+            int   nO  = bestOverallSim.nWin + bestOverallSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 1, '#1 ALL', #ffb74d, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 1, '[TERBAIK ALL] ' + bestOverallSim.name, #ffb74d, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 1, fmt(ntO, '0.00'), ntO >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 1, fmt(bestOverallSim.ddEq, '0.00'), bestOverallSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 1, fmt(bestOverallSim.ddBal, '0.00'), bestOverallSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 1, nO > 0 ? fmt(bestOverallSim.nWin * 100.0 / nO, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 1, str.tostring(nO), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 1, fmt(bestOverallSim.pf(), '0.00'), bestOverallSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 1, bestOverallSim.liquid ? 'YA' : '-', bestOverallSim.liquid ? bad : dim, 'c', #1a1e29)
+
+        // Baris 2: Terbaik Base Bar Murni (TP Bar + SL Bar)
+        if not na(bestBarBothSim)
+            float ntBB = bestBarBothSim.netPct()
+            int   nBB  = bestBarBothSim.nWin + bestBarBothSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 2, '#' + str.tostring(bestBarBothRank) + ' BAR2', #00e676, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 2, '[BASE BAR TP+SL] ' + bestBarBothSim.name, #00e676, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 2, fmt(ntBB, '0.00'), ntBB >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 2, fmt(bestBarBothSim.ddEq, '0.00'), bestBarBothSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 2, fmt(bestBarBothSim.ddBal, '0.00'), bestBarBothSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 2, nBB > 0 ? fmt(bestBarBothSim.nWin * 100.0 / nBB, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 2, str.tostring(nBB), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 2, fmt(bestBarBothSim.pf(), '0.00'), bestBarBothSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 2, bestBarBothSim.liquid ? 'YA' : '-', bestBarBothSim.liquid ? bad : dim, 'c', #1a1e29)
+
+        // Baris 3: Terbaik Base Bar TP
+        if not na(bestBarTpSim)
+            float ntBT = bestBarTpSim.netPct()
+            int   nBT  = bestBarTpSim.nWin + bestBarTpSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 3, '#' + str.tostring(bestBarTpRank) + ' B-TP', #4dd0e1, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 3, '[BASE BAR TP] ' + bestBarTpSim.name, #4dd0e1, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 3, fmt(ntBT, '0.00'), ntBT >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 3, fmt(bestBarTpSim.ddEq, '0.00'), bestBarTpSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 3, fmt(bestBarTpSim.ddBal, '0.00'), bestBarTpSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 3, nBT > 0 ? fmt(bestBarTpSim.nWin * 100.0 / nBT, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 3, str.tostring(nBT), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 3, fmt(bestBarTpSim.pf(), '0.00'), bestBarTpSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 3, bestBarTpSim.liquid ? 'YA' : '-', bestBarTpSim.liquid ? bad : dim, 'c', #1a1e29)
+
+        // Baris 4: Terbaik Base Bar SL
+        if not na(bestBarSlSim)
+            float ntBS = bestBarSlSim.netPct()
+            int   nBS  = bestBarSlSim.nWin + bestBarSlSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 4, '#' + str.tostring(bestBarSlRank) + ' B-SL', #ff8a65, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 4, '[BASE BAR SL] ' + bestBarSlSim.name, #ff8a65, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 4, fmt(ntBS, '0.00'), ntBS >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 4, fmt(bestBarSlSim.ddEq, '0.00'), bestBarSlSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 4, fmt(bestBarSlSim.ddBal, '0.00'), bestBarSlSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 4, nBS > 0 ? fmt(bestBarSlSim.nWin * 100.0 / nBS, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 4, str.tostring(nBS), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 4, fmt(bestBarSlSim.pf(), '0.00'), bestBarSlSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 4, bestBarSlSim.liquid ? 'YA' : '-', bestBarSlSim.liquid ? bad : dim, 'c', #1a1e29)
+
+        // Baris 5: Terbaik Base Persen Tetap (Fixed %)
+        if not na(bestFixedPctSim)
+            float ntFX = bestFixedPctSim.netPct()
+            int   nFX  = bestFixedPctSim.nWin + bestFixedPctSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 5, '#' + str.tostring(bestFixedPctRank) + ' FIX%', #ce93d8, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 5, '[BASE PERSEN FIXED] ' + bestFixedPctSim.name, #ce93d8, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 5, fmt(ntFX, '0.00'), ntFX >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 5, fmt(bestFixedPctSim.ddEq, '0.00'), bestFixedPctSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 5, fmt(bestFixedPctSim.ddBal, '0.00'), bestFixedPctSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 5, nFX > 0 ? fmt(bestFixedPctSim.nWin * 100.0 / nFX, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 5, str.tostring(nFX), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 5, fmt(bestFixedPctSim.pf(), '0.00'), bestFixedPctSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 5, bestFixedPctSim.liquid ? 'YA' : '-', bestFixedPctSim.liquid ? bad : dim, 'c', #1a1e29)
+
+        // Baris 6: Terbaik Base Persen Median (M %)
+        if not na(bestMedPctSim)
+            float ntMD = bestMedPctSim.netPct()
+            int   nMD  = bestMedPctSim.nWin + bestMedPctSim.nLoss
+            tcBg(ldTbl, 0, sumRow + 6, '#' + str.tostring(bestMedPctRank) + ' MED%', #90caf9, 'c', #1a1e29)
+            tcBg(ldTbl, 1, sumRow + 6, '[BASE PERSEN MEDIAN] ' + bestMedPctSim.name, #90caf9, 'l', #1a1e29)
+            tcBg(ldTbl, 2, sumRow + 6, fmt(ntMD, '0.00'), ntMD >= 0 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 3, sumRow + 6, fmt(bestMedPctSim.ddEq, '0.00'), bestMedPctSim.ddEq > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 4, sumRow + 6, fmt(bestMedPctSim.ddBal, '0.00'), bestMedPctSim.ddBal > 0 ? bad : neu, 'r', #1a1e29)
+            tcBg(ldTbl, 5, sumRow + 6, nMD > 0 ? fmt(bestMedPctSim.nWin * 100.0 / nMD, '0.0') : '-', neu, 'r', #1a1e29)
+            tcBg(ldTbl, 6, sumRow + 6, str.tostring(nMD), neu, 'r', #1a1e29)
+            tcBg(ldTbl, 7, sumRow + 6, fmt(bestMedPctSim.pf(), '0.00'), bestMedPctSim.pf() >= 1 ? good : bad, 'r', #1a1e29)
+            tcBg(ldTbl, 8, sumRow + 6, bestMedPctSim.liquid ? 'YA' : '-', bestMedPctSim.liquid ? bad : dim, 'c', #1a1e29)
+
+    // ── Render Tabel Detail (Sesuai Strategi yang Dipilih) ──────
+    if showDt
+        Sim bs      = not na(visSim) ? visSim : bestOverallSim
+        int dispRnk = not na(selRank) ? selRank : 1
+        [bf, bn]    = scanAt(bs, close)
+        float eqNow = bs.liquid ? 0.0 : bs.bal + bf
+        float um    = bs.usedM()
+        float net   = eqNow - initCap
+        float netP  = net / initCap * 100
+        int   nTr   = bs.nWin + bs.nLoss
+        float mdH   = array.size(hiArr) > 0 ? array.median(hiArr) : na
+        float mdL   = array.size(loArr) > 0 ? array.median(loArr) : na
+
+        string hdrPrefix = not na(visSim) ? 'DETAIL PILIHAN (Rank #' + str.tostring(dispRnk) + '): ' : 'DETAIL TOP #1 (Pilih Strategi = None): '
+        table.cell(dtTbl, 0, 0, hdrPrefix + bs.name, text_color = color.white, text_halign = text.align_center, text_size = size.small, bgcolor = #2962ff)
+        table.merge_cells(dtTbl, 0, 0, 1, 0)
+
+        string catTxt  = (bs.isBarBoth() ? 'Base Bar Murni (TP+SL Bar)' : (bs.isBarTp() ? 'Base Bar TP' : (bs.isBarSl() ? 'Base Bar SL' : (bs.isFixedPct() ? 'Base Persen Tetap' : (bs.isMedianPct() ? 'Base Persen Median' : 'NextSR Only')))))
+        string modeTxt = bs.mode == 0 ? 'Hedge Mode' : 'One-Way (Maks 1 Posisi)'
+
+        dtRow(1, 'Peringkat Strategi', '#' + str.tostring(dispRnk) + ' dari ' + str.tostring(array.size(sims)) + ' (' + rankBy + ')', #ffb74d)
+        dtRow(2, 'Mode & Kategori', modeTxt + ' | ' + catTxt, bs.isBarBoth() ? #00e676 : (bs.isBarAny() ? #4dd0e1 : #ce93d8))
+        dtRow(3, 'Saldo Awal / Akhir', fmt(initCap, '0.00') + ' / ' + fmt(bs.liquid ? 0.0 : bs.bal, '0.00') + ' USDT', neu)
+        dtRow(4, 'Equity (Floating)', fmt(eqNow, '0.00') + ' USDT', neu)
+        dtRow(5, 'Net Profit (Round-Trip)', fmt(net, '0.00') + ' (' + fmt(netP, '0.00') + '%)', net >= 0 ? good : bad)
+        dtRow(6, 'Margin / Entry & Lev', fmt(marginPct, '0.0') + '% (' + (marginBasis == 'Initial Balance' ? 'Awal' : 'Saldo') + ') | ' + str.tostring(leverage) + 'x', neu)
+        dtRow(7, 'Fee Entry / Exit TP', fmt(feeEntry, '0.000') + '% / ' + fmt(feeExit, '0.000') + '% (2 Arah)', neu)
+        dtRow(8, 'Median H / |L| (SR selesai)', fmt(mdH, '0.000') + '% / ' + fmt(mdL, '0.000') + '%', neu)
+        dtRow(9, 'Entry Long / Short', str.tostring(bs.nLong) + ' / ' + str.tostring(bs.nShort), neu)
+        dtRow(10, 'Exit TP Persen / Bar-TP', str.tostring(bs.nTp - bs.nBarTp) + ' / ' + str.tostring(bs.nBarTp), #4dd0e1)
+        dtRow(11, 'Exit SL Persen / Bar-SL / Trail / NextSR', str.tostring(bs.nStop - bs.nTrail - bs.nBarSl) + ' / ' + str.tostring(bs.nBarSl) + ' / ' + str.tostring(bs.nTrail) + ' / ' + str.tostring(bs.nNext), #ff8a65)
+        dtRow(12, 'Win / Loss (Net Fee)', str.tostring(bs.nWin) + ' / ' + str.tostring(bs.nLoss) + (nTr > 0 ? ' (' + fmt(bs.nWin * 100.0 / nTr, '0.0') + '%)' : ''), neu)
+        dtRow(13, 'Profit Factor (Net Fee)', fmt(bs.pf(), '0.00'), bs.pf() >= 1 ? good : bad)
+        dtRow(14, 'Posisi Open', str.tostring(array.size(bs.book)) + ' (' + fmt(bf, '0.00') + ')', bf >= 0 ? good : bad)
+        dtRow(15, 'Margin Terpakai', fmt(um, '0.00') + ' (' + fmt(eqNow > 0 ? um / eqNow * 100 : na, '0.0') + '%)', neu)
+        dtRow(16, 'Total Fee Dibayar', fmt(bs.fees, '0.00') + ' USDT', neu)
+        dtRow(17, 'Entry Dilewati (Skip)', str.tostring(bs.nSkip), neu)
+        dtRow(18, 'Max DD Equity / Balance', fmt(bs.ddEq, '0.00') + '% / ' + fmt(bs.ddBal, '0.00') + '%', bs.ddEq > 0 ? bad : neu)
+        dtRow(19, 'Likuidasi (Saldo Habis)', bs.liquid ? 'YA - ' + str.format_time(bs.liqTime, 'yyyy-MM-dd HH:mm', 'GMT+7') : 'TIDAK', bs.liquid ? bad : good)
+        dtRow(20, 'SR Selesai (Sampel)', str.tostring(array.size(hiArr)), neu)
+        dtRow(21, 'Terbaik Base Bar (TP+SL)', not na(bestBarBothSim) ? '#' + str.tostring(bestBarBothRank) + ' ' + bestBarBothSim.key : '-', #00e676)
+        dtRow(22, 'Terbaik Base Persen Fixed', not na(bestFixedPctSim) ? '#' + str.tostring(bestFixedPctRank) + ' ' + bestFixedPctSim.key : '-', #ce93d8)
+        dtRow(23, 'Kode Dropdown', bs.key, #ffb74d)
