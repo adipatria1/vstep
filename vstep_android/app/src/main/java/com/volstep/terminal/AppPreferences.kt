@@ -9,6 +9,7 @@ class AppPreferences(context: Context) {
     var serverUrl: String
         get() {
             val url = prefs.getString(KEY_SERVER_URL, DEFAULT_URL) ?: DEFAULT_URL
+            if (url == "http://10.0.2.2:5050") return DEFAULT_URL
             return if (url.endsWith("/")) url.dropLast(1) else url
         }
         set(value) {
@@ -25,7 +26,7 @@ class AppPreferences(context: Context) {
         private const val KEY_SERVER_URL = "key_server_url"
         private const val KEY_NOTIF_ENABLED = "key_notif_enabled"
 
-        // Default URL: fallback port 5050
-        const val DEFAULT_URL = "http://10.0.2.2:5050" // 10.0.2.2 adalah localhost host machine di emulator Android
+        // Default URL: Standalone Localhost (Embedded Native Rust Engine)
+        const val DEFAULT_URL = "http://127.0.0.1:5050"
     }
 }

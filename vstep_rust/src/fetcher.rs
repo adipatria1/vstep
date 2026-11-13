@@ -52,7 +52,7 @@ pub fn get_interval_ms(interval: &str) -> i64 {
 
 pub fn get_cache_path(symbol: &str, interval: &str, days: u32) -> PathBuf {
     let clean_sym = symbol.to_uppercase().replace('/', "");
-    let mut dir = PathBuf::from("cache");
+    let mut dir = crate::get_data_dir().join("cache");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }

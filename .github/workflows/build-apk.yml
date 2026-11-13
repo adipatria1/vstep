@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build & Package APK
+    name: Build Standalone Embedded APK
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +22,31 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Build APK with Gradle
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Build Native Rust Library (libvstep_engine.so)
+        run: |
+          NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          if [ -z "$NDK_PATH" ] || [ ! -d "$NDK_PATH" ]; then
+            echo "NDK not found, installing via sdkmanager..."
+            $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.3.11579264"
+            NDK_PATH="$ANDROID_SDK_ROOT/ndk/26.3.11579264"
+          fi
+          echo "Using Android NDK at: $NDK_PATH"
+          export ANDROID_NDK_HOME="$NDK_PATH"
+          cd vstep_rust
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o ../vstep_android/app/src/main/jniLibs build --release
+          cd ..
+          echo "Native libraries successfully compiled:"
+          ls -lh vstep_android/app/src/main/jniLibs/*
+
+      - name: Build Standalone APK with Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
@@ -32,11 +56,11 @@ jobs:
       - name: Rename APK for Easy Download
         run: |
           mkdir -p output-apk
-          cp vstep_android/app/build/outputs/apk/debug/*.apk output-apk/VolStepTerminal-debug.apk
+          cp vstep_android/app/build/outputs/apk/debug/*.apk output-apk/VolStepTerminal-Standalone-debug.apk
 
-      - name: Upload Debug APK Artifact
+      - name: Upload Standalone Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VolStepTerminal-Debug-APK
-          path: output-apk/VolStepTerminal-debug.apk
+          name: VolStepTerminal-Standalone-Debug-APK
+          path: output-apk/VolStepTerminal-Standalone-debug.apk
           retention-days: 14

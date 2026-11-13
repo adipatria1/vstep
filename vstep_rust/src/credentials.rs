@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
-
-const CREDS_PATH: &str = "config/credentials.json";
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ApiCredentials {
@@ -12,12 +10,13 @@ pub struct ApiCredentials {
     pub real_secret_key: String,
 }
 
-pub fn get_credentials_path() -> &'static str {
-    CREDS_PATH
+pub fn get_credentials_path() -> PathBuf {
+    crate::get_data_dir().join("config").join("credentials.json")
 }
 
 pub fn load_credentials() -> ApiCredentials {
-    if let Ok(content) = fs::read_to_string(CREDS_PATH) {
+    let path = get_credentials_path();
+    if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(creds) = serde_json::from_str::<ApiCredentials>(&content) {
             return creds;
         }
@@ -26,12 +25,13 @@ pub fn load_credentials() -> ApiCredentials {
 }
 
 pub fn save_credentials(creds: &ApiCredentials) -> Result<(), String> {
-    if let Some(parent) = Path::new(CREDS_PATH).parent() {
+    let path = get_credentials_path();
+    if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     let json = serde_json::to_string_pretty(creds)
         .map_err(|e| format!("Gagal memformat JSON credentials: {}", e))?;
-    fs::write(CREDS_PATH, json)
-        .map_err(|e| format!("Gagal menulis file {}: {}", CREDS_PATH, e))?;
+    fs::write(&path, json)
+        .map_err(|e| format!("Gagal menulis file {:?}: {}", path, e))?;
     Ok(())
 }

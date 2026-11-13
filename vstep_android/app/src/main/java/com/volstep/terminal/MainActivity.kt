@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.webkit.ConsoleMessage
@@ -37,6 +38,22 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val TAG = "VolStepNative"
+
+        init {
+            try {
+                System.loadLibrary("vstep_engine")
+                Log.i(TAG, "libvstep_engine loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "Native library not loaded: ${e.message}")
+            }
+        }
+    }
+
+    private external fun startNativeEngine(port: Int, dataDir: String): Int
+    private external fun isNativeEngineRunning(): Int
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: AppPreferences
     private val httpClient = OkHttpClient.Builder()
@@ -46,6 +63,7 @@ class MainActivity : AppCompatActivity() {
 
     private var currentPath: String = "/"
     private var backPressedTime: Long = 0
+    private var loadAttempts: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +72,7 @@ class MainActivity : AppCompatActivity() {
 
         prefs = AppPreferences(this)
 
+        startEmbeddedEngineIfAvailable()
         requestAppPermissions()
         setupWebView()
         setupBottomNav()
@@ -62,6 +81,16 @@ class MainActivity : AppCompatActivity() {
         startBotService()
 
         loadCurrentPage()
+    }
+
+    private fun startEmbeddedEngineIfAvailable() {
+        try {
+            val appDataDir = filesDir.absolutePath
+            val res = startNativeEngine(5050, appDataDir)
+            Log.i(TAG, "Native Rust engine started with code $res in dir: $appDataDir")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Native engine call skipped/failed: ${e.message}")
+        }
     }
 
     private fun requestAppPermissions() {
@@ -111,6 +140,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                loadAttempts = 99
                 binding.swipeRefresh.isRefreshing = false
                 binding.statusDot.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.good_green))
             }
@@ -118,9 +148,16 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
-                    binding.swipeRefresh.isRefreshing = false
-                    binding.statusDot.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.bad_red))
-                    showConnectionErrorOverlay()
+                    if (loadAttempts < 6) {
+                        loadAttempts++
+                        binding.root.postDelayed({
+                            loadCurrentPage()
+                        }, 500)
+                    } else {
+                        binding.swipeRefresh.isRefreshing = false
+                        binding.statusDot.setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.bad_red))
+                        showConnectionErrorOverlay()
+                    }
                 }
             }
 
@@ -186,6 +223,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnRetryConn.setOnClickListener {
             binding.layoutErrorOverlay.visibility = View.GONE
+            loadAttempts = 0
             loadCurrentPage()
         }
 
@@ -282,6 +320,7 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
                 Toast.makeText(this, "Alamat server diperbarui!", Toast.LENGTH_SHORT).show()
                 binding.layoutErrorOverlay.visibility = View.GONE
+                loadAttempts = 0
                 loadCurrentPage()
             }
         }
