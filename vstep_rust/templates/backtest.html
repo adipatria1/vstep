@@ -10,19 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
-    <header class="app-header">
-        <div class="header-brand">
-            <a href="/" class="btn-back-home" title="Kembali ke Menu Utama">← Menu</a>
-            <span class="logo-badge">PRO v2.0</span>
-            <h1>VolStep Finder <span class="sub-title">105 Strategi</span></h1>
-        </div>
-        <div class="header-status">
-            <span id="backend-status" class="badge badge-online">Ready</span>
-            <span id="data-status" class="badge badge-idle">No Data</span>
-        </div>
-    </header>
-
     <div class="main-container">
+        <!-- Hidden status bridges for JS compatibility -->
+        <span id="backend-status" style="display:none;">Ready</span>
+        <span id="data-status" style="display:none;">No Data</span>
+
         <!-- Control Panel (Mobile-First Card) -->
         <aside class="sidebar-panel">
             <form id="backtest-form">

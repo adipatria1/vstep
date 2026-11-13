@@ -10,19 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme">
-    <header class="app-header">
-        <div class="header-brand">
-            <a href="/" class="btn-back-home" title="Kembali ke Menu Utama">← Menu</a>
-            <span class="logo-badge">PRO v2.0</span>
-            <h1>Demo Binance <span class="sub-title">Paper Bot</span></h1>
-        </div>
-        <div class="header-status">
-            <span id="bot-status-badge" class="badge badge-idle">Stopped</span>
-            <span id="conn-status-badge" class="badge badge-idle">Cek API...</span>
-        </div>
-    </header>
-
     <div class="main-container" style="max-width: 1000px; margin: 0 auto; padding: 12px;">
+        <!-- Hidden status bridges for JS compatibility -->
+        <span id="bot-status-badge" style="display:none;">Stopped</span>
+        <span id="conn-status-badge" style="display:none;">API OK</span>
+
         <!-- Hero Wallet Card (Binance Futures Mobile Style) -->
         <div class="demo-hero-wallet">
             <div class="dhw-top">
