@@ -375,23 +375,26 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
         (&Method::Post, "/api/demo/start") => {
             let mut body = String::new();
             let _ = request.as_reader().read_to_string(&mut body);
-            if let Ok(cfg) = serde_json::from_str::<BotConfig>(&body) {
-                match state.bot.start(cfg) {
-                    Ok(_) => {
-                        let ok = serde_json::json!({"status": "ok", "message": "Bot Demo berhasil dijalankan."});
-                        let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-                        let _ = request.respond(Response::from_string(ok.to_string()).with_header(header));
-                    }
-                    Err(e) => {
-                        let err = serde_json::json!({"status": "error", "message": e});
-                        let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-                        let _ = request.respond(Response::from_string(err.to_string()).with_header(header));
+            match serde_json::from_str::<BotConfig>(&body) {
+                Ok(cfg) => {
+                    match state.bot.start(cfg) {
+                        Ok(_) => {
+                            let ok = serde_json::json!({"status": "ok", "message": "Bot Demo berhasil dijalankan."});
+                            let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+                            let _ = request.respond(Response::from_string(ok.to_string()).with_header(header));
+                        }
+                        Err(e) => {
+                            let err = serde_json::json!({"status": "error", "message": e});
+                            let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+                            let _ = request.respond(Response::from_string(err.to_string()).with_header(header));
+                        }
                     }
                 }
-            } else {
-                let err = serde_json::json!({"status": "error", "message": "Invalid JSON body"});
-                let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-                let _ = request.respond(Response::from_string(err.to_string()).with_header(header));
+                Err(e) => {
+                    let err = serde_json::json!({"status": "error", "message": format!("Invalid JSON body: {}", e)});
+                    let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
+                    let _ = request.respond(Response::from_string(err.to_string()).with_header(header));
+                }
             }
         }
 

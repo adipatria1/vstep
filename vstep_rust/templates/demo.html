@@ -634,13 +634,11 @@
                     const cfg = {
                         is_running: true,
                         coin_mode: isManualCoin ? 'manual' : screenerSource,
-                        screener_source: screenerSource,
                         manual_symbol: firstSymbol,
                         manual_symbols: manualSymbolsVal.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0),
                         max_active_slots: maxCoins,
-                        max_coins: maxCoins,
                         interval: timeframe,
-                        timeframe: timeframe,
+                        warmup_klines: 1000,
                         line_mode: document.getElementById('line_mode').value,
                         volatility_type: document.getElementById('volatility_type').value,
                         volatility_length: parseInt(document.getElementById('volatility_length').value, 10) || 200,
@@ -649,13 +647,13 @@
                         manual_strategy_key: document.getElementById('manual_strategy_key').value,
                         strat_filter: document.getElementById('strat_filter').value,
                         rank_by: document.getElementById('rank_by').value,
-                        min_levels: parseInt(document.getElementById('min_levels').value, 10),
+                        min_levels: parseInt(document.getElementById('min_levels').value, 10) || 10,
                         one_way_rule: document.getElementById('one_way_rule').value,
                         leverage_mode: document.getElementById('leverage_mode').value,
                         manual_leverage: parseInt(document.getElementById('manual_leverage').value, 10) || 10,
-                        margin_pct_per_slot: parseFloat(document.getElementById('margin_pct_per_slot').value),
+                        margin_pct_per_slot: parseFloat(document.getElementById('margin_pct_per_slot').value) || 4.0,
                         execution_mode: executionMode.value,
-                        pre_close_buffer_ms: parseInt(document.getElementById('pre_close_buffer_ms').value, 10)
+                        pre_close_buffer_ms: parseInt(document.getElementById('pre_close_buffer_ms').value, 10) || 1000
                     };
 
                     fetch('/api/demo/start', {
