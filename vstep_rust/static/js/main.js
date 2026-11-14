@@ -244,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnRun.addEventListener('click', () => {
         const symbol = document.getElementById('symbol').value.trim().toUpperCase();
         if (!symbol) {
-            alert('Silakan masukkan nama koin/symbol!');
+            showToast('Silakan masukkan nama koin/symbol terlebih dahulu.', 'info');
             return;
         }
 
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     btnRecalc.disabled = false;
                     progressLabel.textContent = `Error: ${msg.message}`;
                     progressBar.style.backgroundColor = 'var(--bad-red)';
-                    alert(`Gagal menjalankan simulasi: ${msg.message}`);
+                    showToast(`Gagal menjalankan simulasi: ${msg.message}`, 'error');
                 }
             } catch (err) {
                 console.error('SSE JSON error:', err);
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progressContainer.style.display = 'none';
 
             if (data.error) {
-                alert(data.error);
+                showToast(data.error, 'error');
                 return;
             }
 
@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnRecalc.disabled = false;
             btnRun.disabled = false;
             progressContainer.style.display = 'none';
-            alert(`Error hitung ulang: ${err.message}`);
+            showToast(`Error hitung ulang: ${err.message}`, 'error');
         });
     });
 

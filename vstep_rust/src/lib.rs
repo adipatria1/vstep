@@ -62,6 +62,7 @@ const SETTINGS_HTML: &str = include_str!("../templates/settings.html");
 const PLACEHOLDER_HTML: &str = include_str!("../templates/placeholder.html");
 const STYLE_CSS: &str = include_str!("../static/css/style.css");
 const MAIN_JS: &str = include_str!("../static/js/main.js");
+const UI_DIALOG_JS: &str = include_str!("../static/js/ui-dialog.js");
 
 #[derive(Clone)]
 struct AppState {
@@ -163,6 +164,13 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
         (&Method::Get, "/static/js/main.js") => {
             let header = Header::from_bytes(&b"Content-Type"[..], &b"application/javascript; charset=utf-8"[..]).unwrap();
             let response = Response::from_string(MAIN_JS).with_header(header);
+            let _ = request.respond(response);
+        }
+
+        // Static UI Dialog JS
+        (&Method::Get, "/static/js/ui-dialog.js") => {
+            let header = Header::from_bytes(&b"Content-Type"[..], &b"application/javascript; charset=utf-8"[..]).unwrap();
+            let response = Response::from_string(UI_DIALOG_JS).with_header(header);
             let _ = request.respond(response);
         }
 

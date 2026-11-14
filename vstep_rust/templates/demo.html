@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Demo Binance Futures - VolStep Terminal</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/ui-dialog.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -47,26 +48,26 @@
         <!-- Engine Controller Actions -->
         <div style="display: flex; gap: 10px; margin-bottom: 14px;">
             <button type="button" id="btn-toggle-bot" class="btn btn-primary" style="flex: 2; padding: 14px; font-size: 14px; font-weight: 800; border-radius: 8px;">
-                ▶ START DEMO BOT
+                START DEMO BOT
             </button>
             <button type="button" id="btn-panic-close" class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 12px; font-weight: 700; border-radius: 8px; background: rgba(242, 54, 69, 0.15); border-color: var(--bad-red); color: var(--bad-red);">
-                ⚠️ PANIC CLOSE
+                PANIC CLOSE
             </button>
         </div>
 
         <!-- Segmented Mobile Tabs -->
         <div class="mobile-segment-tabs">
             <button type="button" class="seg-tab active" data-tab="tab-demo-positions">
-                💼 Posisi Aktif (<span id="pos-count-badge">0</span>)
+                Posisi (<span id="pos-count-badge">0</span>)
             </button>
             <button type="button" class="seg-tab" data-tab="tab-demo-scanner">
-                📡 Live Scanner (<span id="scanner-coin-badge">-</span>)
+                Live Scanner (<span id="scanner-coin-badge">-</span>)
             </button>
             <button type="button" class="seg-tab" data-tab="tab-demo-config">
-                ⚙️ Aturan & Parameter
+                Parameter
             </button>
             <button type="button" class="seg-tab" data-tab="tab-demo-terminal">
-                📜 Terminal Aktivitas
+                Terminal Log
             </button>
         </div>
 
@@ -505,7 +506,7 @@
                         // 2. Bot State
                         isRunning = data.is_running;
                         if (isRunning) {
-                            btnToggleBot.textContent = '⏹ STOP DEMO BOT';
+                            btnToggleBot.textContent = 'STOP DEMO BOT';
                             btnToggleBot.className = 'btn btn-secondary';
                             btnToggleBot.style.background = 'rgba(242, 54, 69, 0.2)';
                             btnToggleBot.style.borderColor = 'var(--bad-red)';
@@ -516,7 +517,7 @@
                             botStatusBadge.textContent = 'Bot Running';
                             botStatusBadge.className = 'badge badge-online';
                         } else {
-                            btnToggleBot.textContent = '▶ START DEMO BOT';
+                            btnToggleBot.textContent = 'START DEMO BOT';
                             btnToggleBot.className = 'btn btn-primary';
                             btnToggleBot.style.background = '';
                             btnToggleBot.style.borderColor = '';
@@ -649,22 +650,28 @@
                         const sym = e.target.dataset.sym;
                         const side = e.target.dataset.side;
                         const qty = parseFloat(e.target.dataset.qty);
-                        if (confirm(`Tutup posisi ${side} ${sym} sekarang secara instan?`)) {
-                            fetch('/api/demo/manual_close', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ symbol: sym, side: side, qty: Math.abs(qty) })
-                            })
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data.status === 'ok') {
-                                    alert(`Posisi ${sym} berhasil ditutup!`);
-                                    pollBotState();
-                                } else {
-                                    alert(`Gagal menutup: ${data.message}`);
-                                }
-                            });
-                        }
+                        showConfirm({
+                            title: 'Tutup Posisi',
+                            message: `Tutup posisi ${side} ${sym} sekarang secara instan pada harga pasar?`,
+                            confirmText: 'Tutup Posisi',
+                            isDanger: true,
+                            onConfirm: () => {
+                                fetch('/api/demo/manual_close', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ symbol: sym, side: side, qty: Math.abs(qty) })
+                                })
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data.status === 'ok') {
+                                        showToast(`Posisi ${sym} berhasil ditutup.`, 'success');
+                                        pollBotState();
+                                    } else {
+                                        showToast(`Gagal menutup: ${data.message}`, 'error');
+                                    }
+                                });
+                            }
+                        });
                     });
                 });
             }
@@ -929,12 +936,14 @@
                     .then(res => res.json())
                     .then(data => {
                         pollBotState();
-                        if (data.status !== 'ok') {
-                            alert('Gagal menyalakan bot: ' + data.message);
+                        if (data.status === 'ok') {
+                            showToast('Bot Demo berhasil dijalankan.', 'success');
+                        } else {
+                            showToast('Gagal menyalakan bot: ' + data.message, 'error');
                         }
                     })
                     .catch(err => {
-                        alert('Koneksi terputus: ' + err.message);
+                        showToast('Koneksi terputus: ' + err.message, 'error');
                         pollBotState();
                     });
                 } else {
@@ -942,6 +951,7 @@
                     fetch('/api/demo/stop', { method: 'POST' })
                     .then(res => res.json())
                     .then(data => {
+                        showToast('Bot Demo dihentikan.', 'info');
                         pollBotState();
                     })
                     .catch(err => {
@@ -952,14 +962,20 @@
 
             // Panic Close All
             btnPanicClose.addEventListener('click', () => {
-                if (confirm('PERINGATAN: Tutup SEMUA posisi aktif sekarang juga dengan Market Order?')) {
-                    fetch('/api/demo/panic_close', { method: 'POST' })
-                    .then(res => res.json())
-                    .then(data => {
-                        alert(data.message);
-                        pollBotState();
-                    });
-                }
+                showConfirm({
+                    title: 'Panic Close Semua Posisi',
+                    message: 'Perhatian: Seluruh posisi aktif akan ditutup secara instan menggunakan Market Order. Lanjutkan?',
+                    confirmText: 'Ya, Tutup Semua',
+                    isDanger: true,
+                    onConfirm: () => {
+                        fetch('/api/demo/panic_close', { method: 'POST' })
+                        .then(res => res.json())
+                        .then(data => {
+                            showToast(data.message, 'info');
+                            pollBotState();
+                        });
+                    }
+                });
             });
 
             // Start polling loop (every 1.5 seconds)

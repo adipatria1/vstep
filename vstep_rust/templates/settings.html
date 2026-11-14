@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Setting API Binance - VolStep Terminal</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/ui-dialog.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -143,14 +144,14 @@
                 .then(data => {
                     btnSave.disabled = false;
                     if (data.status === 'ok') {
-                        alert('✓ Kredensial berhasil disimpan aman di config/credentials.json!');
+                        showToast('Kredensial API Binance berhasil disimpan dengan aman.', 'success');
                     } else {
-                        alert('Gagal menyimpan: ' + data.message);
+                        showToast('Gagal menyimpan: ' + data.message, 'error');
                     }
                 })
                 .catch(err => {
                     btnSave.disabled = false;
-                    alert('Error: ' + err.message);
+                    showToast('Terjadi kesalahan: ' + err.message, 'error');
                 });
             });
 
@@ -160,7 +161,7 @@
                 const secretKey = demoSecretKey.value.trim();
 
                 if (!apiKey || !secretKey) {
-                    alert('Silakan isi Demo API Key dan Secret Key terlebih dahulu!');
+                    showToast('Silakan isi Demo API Key dan Secret Key terlebih dahulu.', 'info');
                     return;
                 }
 
@@ -238,31 +239,35 @@
             btnRefreshCache.addEventListener('click', refreshCacheInfo);
 
             btnClearCache.addEventListener('click', () => {
-                if (!confirm('Yakin ingin menghapus seluruh cache data kline? Anda perlu fetch ulang saat backtest berikutnya.')) {
-                    return;
-                }
-                btnClearCache.disabled = true;
-                btnClearCache.textContent = '⏳ Membersihkan cache...';
+                showConfirm({
+                    title: 'Hapus Cache Kline',
+                    message: 'Yakin ingin menghapus seluruh file cache kline? Data historis akan diunduh ulang dari Binance pada backtest berikutnya.',
+                    confirmText: 'Ya, Bersihkan Cache',
+                    cancelText: 'Batal',
+                    isDanger: true,
+                    onConfirm: () => {
+                        btnClearCache.disabled = true;
+                        btnClearCache.textContent = 'Membersihkan cache...';
 
-                fetch('/api/cache/clear', { method: 'POST' })
-                    .then(res => res.json())
-                    .then(data => {
-                        btnClearCache.disabled = false;
-                        btnClearCache.textContent = '🗑️ Hapus Semua Cache Kline';
-                        if (data.status === 'ok') {
-                            cacheClearMsg.textContent = '✓ ' + data.message;
-                            cacheClearMsg.style.display = 'block';
-                            refreshCacheInfo();
-                            setTimeout(() => { cacheClearMsg.style.display = 'none'; }, 4000);
-                        } else {
-                            alert('Gagal membersihkan cache: ' + data.message);
-                        }
-                    })
-                    .catch(err => {
-                        btnClearCache.disabled = false;
-                        btnClearCache.textContent = '🗑️ Hapus Semua Cache Kline';
-                        alert('Error: ' + err.message);
-                    });
+                        fetch('/api/cache/clear', { method: 'POST' })
+                            .then(res => res.json())
+                            .then(data => {
+                                btnClearCache.disabled = false;
+                                btnClearCache.textContent = 'Hapus Semua Cache Kline';
+                                if (data.status === 'ok') {
+                                    showToast(data.message, 'success');
+                                    refreshCacheInfo();
+                                } else {
+                                    showToast('Gagal membersihkan cache: ' + data.message, 'error');
+                                }
+                            })
+                            .catch(err => {
+                                btnClearCache.disabled = false;
+                                btnClearCache.textContent = 'Hapus Semua Cache Kline';
+                                showToast('Terjadi kesalahan: ' + err.message, 'error');
+                            });
+                    }
+                });
             });
         });
     </script>

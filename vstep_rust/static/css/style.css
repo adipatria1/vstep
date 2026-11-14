@@ -1006,45 +1006,74 @@ select:focus {
 /* Segmented Mobile Tabs */
 .mobile-segment-tabs {
     display: flex;
-    background: #10141e;
+    background: #0d111a;
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 4px;
-    gap: 6px;
-    margin-bottom: 12px;
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+    margin-bottom: 14px;
     overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-segment-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .seg-tab {
-    flex: 1;
-    min-width: 100px;
+    flex: 1 1 0;
+    min-width: max-content;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 8px;
-    font-size: 13px;
-    font-weight: 700;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-dim);
     background: transparent;
-    border: none;
-    border-radius: 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
     cursor: pointer;
     text-align: center;
     white-space: nowrap;
+    position: relative;
     transition: all 0.2s ease;
     -webkit-tap-highlight-color: transparent;
 }
 
+/* Clear vertical divider separator between inactive tabs */
+.seg-tab:not(:last-child):not(.active)::after {
+    content: '';
+    position: absolute;
+    right: -2px;
+    top: 25%;
+    height: 50%;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.15);
+    pointer-events: none;
+}
+
+.seg-tab.active + .seg-tab::after {
+    opacity: 0;
+}
+
 .seg-tab:hover {
     color: var(--text-white);
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .seg-tab.active {
-    background: #1e2433;
-    color: var(--text-white);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(41, 98, 255, 0.4);
+    background: #1e2536;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.seg-tab.active::after {
+    display: none;
 }
 
 /* View Mode Switcher (Kartu vs Tabel) */
@@ -1652,5 +1681,211 @@ select:focus {
     color: #ffffff;
     text-align: right;
 }
+
+/* ========================================================
+   Custom Toast & In-App Dialog Styles (Anti-Slop Clean UI)
+   ======================================================== */
+.ui-toast-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 90%;
+    max-width: 420px;
+    pointer-events: none;
+}
+
+.ui-toast {
+    pointer-events: auto;
+    background: #161b26;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-white);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    animation: toastSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ui-toast.ui-toast-exit {
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
+.ui-toast-success {
+    border-left: 4px solid var(--good-green);
+}
+
+.ui-toast-error {
+    border-left: 4px solid var(--bad-red);
+}
+
+.ui-toast-info {
+    border-left: 4px solid var(--primary-blue);
+}
+
+.ui-toast-text {
+    flex: 1;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.ui-toast-close {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.ui-toast-close:hover {
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes toastSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Custom Modal Confirmation Dialog */
+.ui-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+.ui-modal-overlay.ui-modal-closing {
+    opacity: 0;
+}
+
+.ui-modal-box {
+    background: #161b26;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ui-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ui-modal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+}
+
+.ui-modal-body {
+    font-size: 13px;
+    color: var(--text-light);
+    line-height: 1.5;
+}
+
+.ui-modal-message {
+    margin: 0;
+}
+
+.ui-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.ui-modal-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    min-height: 40px;
+}
+
+.ui-modal-cancel {
+    background: #1e2433;
+    border-color: var(--border-color);
+    color: var(--text-light);
+}
+
+.ui-modal-cancel:hover {
+    background: #273044;
+    color: #ffffff;
+}
+
+.ui-modal-confirm {
+    background: var(--primary-blue);
+    color: #ffffff;
+}
+
+.ui-modal-confirm:hover {
+    background: var(--primary-blue-hover);
+}
+
+.ui-modal-danger {
+    background: rgba(242, 54, 69, 0.18);
+    border-color: var(--bad-red);
+    color: var(--bad-red);
+}
+
+.ui-modal-danger:hover {
+    background: var(--bad-red);
+    color: #ffffff;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes modalPopIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
 
 
