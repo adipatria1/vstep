@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct Pos {
     pub side: i32, // 1 = Long, -1 = Short
     pub entry: f64,
+    pub entry_sr: f64,
     pub qty: f64,
     pub margin: f64,
     pub fee_in: f64, // Fee entry (Taker/Market) yang dibayar saat buka posisi
@@ -37,6 +38,12 @@ pub struct TradeRec {
     pub entry_time: String,
     #[serde(rename = "entryPx")]
     pub entry_px: f64,
+    #[serde(rename = "entryPxStr")]
+    pub entry_px_str: String,
+    #[serde(rename = "entrySr")]
+    pub entry_sr: f64,
+    #[serde(rename = "entrySrStr")]
+    pub entry_sr_str: String,
     #[serde(rename = "tpPx")]
     pub tp_px: String,
     #[serde(rename = "slPx")]
@@ -49,6 +56,16 @@ pub struct TradeRec {
     pub exit_time: String,
     #[serde(rename = "exitPx")]
     pub exit_px: f64,
+    #[serde(rename = "exitPxStr")]
+    pub exit_px_str: String,
+    #[serde(rename = "closePx")]
+    pub close_px: f64,
+    #[serde(rename = "closePxStr")]
+    pub close_px_str: String,
+    #[serde(rename = "srPx")]
+    pub sr_px: f64,
+    #[serde(rename = "srPxStr")]
+    pub sr_px_str: String,
     pub why: String,
     #[serde(rename = "movePct")]
     pub move_pct: String,
@@ -64,6 +81,16 @@ pub struct OpenPositionView {
     pub entry_time: String,
     #[serde(rename = "entryPx")]
     pub entry_px: f64,
+    #[serde(rename = "entryPxStr")]
+    pub entry_px_str: String,
+    #[serde(rename = "currentClosePx")]
+    pub current_close_px: f64,
+    #[serde(rename = "currentClosePxStr")]
+    pub current_close_px_str: String,
+    #[serde(rename = "currentSrPx")]
+    pub current_sr_px: f64,
+    #[serde(rename = "currentSrPxStr")]
+    pub current_sr_px_str: String,
     pub qty: f64,
     pub margin: f64,
     #[serde(rename = "feeIn")]
@@ -252,7 +279,18 @@ impl Sim {
         self.book.iter().map(|p| p.margin).sum()
     }
 
-    pub fn close_at(&mut self, i: usize, px: f64, fee_pct: f64, reason: i32, why: &str, _bar_idx: usize, t_ms: i64) {
+    pub fn close_at(
+        &mut self,
+        i: usize,
+        px: f64,
+        fee_pct: f64,
+        reason: i32,
+        why: &str,
+        _bar_idx: usize,
+        t_ms: i64,
+        c_px: f64,
+        sr_px: f64,
+    ) {
         let p = self.book.remove(i);
         let gross_pnl = (p.side as f64) * p.qty * (px - p.entry);
         let fee_out = p.qty * px * fee_pct / 100.0;
@@ -294,16 +332,25 @@ impl Sim {
         let dt_entry = DateTime::from_timestamp_millis(p.entry_time).unwrap_or_else(|| Utc::now());
         let dt_exit = DateTime::from_timestamp_millis(t_ms).unwrap_or_else(|| Utc::now());
 
+        // Tampilkan persis harga aslinya tanpa dibulatkan
         let rec = TradeRec {
             side: if p.side == 1 { "BUY".to_string() } else { "SELL".to_string() },
             entry_time: dt_entry.format("%Y-%m-%d %H:%M").to_string(),
-            entry_px: (p.entry * 10000.0).round() / 10000.0,
-            tp_px: p.tp.map(|v| format!("{:.4}", v)).unwrap_or_else(|| "-".to_string()),
-            sl_px: p.sl.map(|v| format!("{:.4}", v)).unwrap_or_else(|| "NextSR".to_string()),
+            entry_px: p.entry,
+            entry_px_str: format!("{}", p.entry),
+            entry_sr: p.entry_sr,
+            entry_sr_str: format!("{}", p.entry_sr),
+            tp_px: p.tp.map(|v| format!("{}", v)).unwrap_or_else(|| "-".to_string()),
+            sl_px: p.sl.map(|v| format!("{}", v)).unwrap_or_else(|| "NextSR".to_string()),
             tp_desc: p.tp_desc,
             sl_desc: p.sl_desc,
             exit_time: dt_exit.format("%Y-%m-%d %H:%M").to_string(),
-            exit_px: (px * 10000.0).round() / 10000.0,
+            exit_px: px,
+            exit_px_str: format!("{}", px),
+            close_px: c_px,
+            close_px_str: format!("{}", c_px),
+            sr_px,
+            sr_px_str: format!("{}", sr_px),
             why: why.to_string(),
             move_pct: format!("{:+0.2}%", move_pct),
             net_pnl: format!("{:+0.2} USDT", net),
@@ -438,16 +485,16 @@ impl Sim {
                     if stop_hit {
                         let is_tr = p.tstop.is_some() && (p.sl.is_none() || (if p.side == 1 { p.tstop.unwrap() >= p.sl.unwrap() } else { p.tstop.unwrap() <= p.sl.unwrap() }));
                         let stop_px = eff_stop.unwrap();
-                        self.close_at(idx, stop_px, fee_entry, if is_tr { 3 } else { 2 }, if is_tr { "TRAIL" } else { "SL" }, bar_idx, t_ms);
+                        self.close_at(idx, stop_px, fee_entry, if is_tr { 3 } else { 2 }, if is_tr { "TRAIL" } else { "SL" }, bar_idx, t_ms, c_px, sr_px);
                     } else if bar_sl_hit && p.sl_bar_t != 4 {
-                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms);
+                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms, c_px, sr_px);
                     } else if tp_hit {
                         let target_tp = p.tp.unwrap();
-                        self.close_at(idx, target_tp, fee_exit, 1, "TP", bar_idx, t_ms);
+                        self.close_at(idx, target_tp, fee_exit, 1, "TP", bar_idx, t_ms, c_px, sr_px);
                     } else if bar_tp_hit {
-                        self.close_at(idx, c_px, fee_entry, 5, &bar_tp_why, bar_idx, t_ms);
+                        self.close_at(idx, c_px, fee_entry, 5, &bar_tp_why, bar_idx, t_ms, c_px, sr_px);
                     } else if bar_sl_hit {
-                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms);
+                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms, c_px, sr_px);
                     } else if let (Some(act_pct), Some(dist_pct)) = (p.act_pct, p.dist_pct) {
                         p.ext = if p.side == 1 { p.ext.max(h_px) } else { p.ext.min(l_px) };
                         let fav_pct = if p.side == 1 {
@@ -483,7 +530,7 @@ impl Sim {
                     // Strategi SL NextSR: wajib tutup semua posisi lama di harga SR baru
                     let mut j = self.book.len() as isize - 1;
                     while j >= 0 {
-                        self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms);
+                        self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms, c_px, sr_px);
                         j -= 1;
                     }
                 } else if self.mode != 0 && prev_sr.is_some() {
@@ -499,14 +546,14 @@ impl Sim {
                     if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
                         let mut j = self.book.len() as isize - 1;
                         while j >= 0 {
-                            self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms);
+                            self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms, c_px, sr_px);
                             j -= 1;
                         }
                     } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
                         let mut j = self.book.len() as isize - 1;
                         while j >= 0 {
                             if self.book[j as usize].side != new_sig_dir {
-                                self.close_at(j as usize, sr_px, fee_entry, 4, "REV SR", bar_idx, t_ms);
+                                self.close_at(j as usize, sr_px, fee_entry, 4, "REV SR", bar_idx, t_ms, c_px, sr_px);
                             }
                             j -= 1;
                         }
@@ -582,7 +629,7 @@ impl Sim {
                                     let b_sl_tgt = if is_bar_sl { self.sl_v as i32 } else { 0 };
 
                                     let tp_label = if let Some(tp) = tp_px {
-                                        format!("{:.4}", tp)
+                                        format!("{}", tp)
                                     } else if self.use_tr {
                                         "TRAIL".to_string()
                                     } else if b_tp_type == 3 {
@@ -596,7 +643,7 @@ impl Sim {
                                     };
 
                                     let sl_label = if let Some(sl) = sl_px {
-                                        format!("{:.4}", sl)
+                                        format!("{}", sl)
                                     } else if b_sl_type == 3 {
                                         format!("BarLoss(>={}b)", b_sl_tgt)
                                     } else if b_sl_type == 4 {
@@ -610,6 +657,7 @@ impl Sim {
                                     self.book.push(Pos {
                                         side: dir,
                                         entry: sr_px,
+                                        entry_sr: sr_px,
                                         qty,
                                         margin: mrg,
                                         fee_in,
@@ -1037,6 +1085,11 @@ pub struct SummarySection {
     pub start_date: String,
     pub end_date: String,
     pub last_price: f64,
+    pub last_price_str: String,
+    pub last_sr: f64,
+    pub last_sr_str: String,
+    pub last_vol: f64,
+    pub last_vol_str: String,
 }
 
 pub fn run_backtest(
@@ -1675,9 +1728,25 @@ pub fn run_backtest(
             val: bs.key.clone(),
             color: "highlight".into(),
         },
+        DetailRow {
+            key: "Harga Close Terakhir".into(),
+            val: format!("{}", last_c),
+            color: "highlight".into(),
+        },
+        DetailRow {
+            key: "Level SR Terakhir".into(),
+            val: format!("{}", *confirmed_sr.last().unwrap_or(&last_c)),
+            color: "highlight".into(),
+        },
+        DetailRow {
+            key: "Band Volatilitas Terakhir".into(),
+            val: format!("±{}", *vol_value.last().unwrap_or(&0.0)),
+            color: "neutral".into(),
+        },
     ];
 
     let mut open_positions = Vec::with_capacity(bs.book.len());
+    let last_sr_val = *confirmed_sr.last().unwrap_or(&last_c);
     for p in &bs.book {
         let e_time = DateTime::from_timestamp_millis(p.entry_time)
             .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
@@ -1689,12 +1758,17 @@ pub fn run_backtest(
         open_positions.push(OpenPositionView {
             side: if p.side == 1 { "BUY".into() } else { "SELL".into() },
             entry_time: e_time,
-            entry_px: (p.entry * 10000.0).round() / 10000.0,
-            qty: (p.qty * 10000.0).round() / 10000.0,
+            entry_px: p.entry,
+            entry_px_str: format!("{}", p.entry),
+            current_close_px: last_c,
+            current_close_px_str: format!("{}", last_c),
+            current_sr_px: last_sr_val,
+            current_sr_px_str: format!("{}", last_sr_val),
+            qty: p.qty,
             margin: (p.margin * 100.0).round() / 100.0,
             fee_in: (p.fee_in * 1000.0).round() / 1000.0,
-            tp_px: p.tp.map(|v| format!("{:.4}", v)).unwrap_or_else(|| "-".into()),
-            sl_px: p.sl.map(|v| format!("{:.4}", v)).unwrap_or_else(|| "NextSR".into()),
+            tp_px: p.tp.map(|v| format!("{}", v)).unwrap_or_else(|| "-".into()),
+            sl_px: p.sl.map(|v| format!("{}", v)).unwrap_or_else(|| "NextSR".into()),
             tp_desc: p.tp_desc.clone(),
             sl_desc: p.sl_desc.clone(),
             float_pct: format!("{:+0.2}%", fl_pct),
@@ -1739,6 +1813,11 @@ pub fn run_backtest(
             start_date: dt_start,
             end_date: dt_end,
             last_price: last_c,
+            last_price_str: format!("{}", last_c),
+            last_sr: *confirmed_sr.last().unwrap_or(&last_c),
+            last_sr_str: format!("{}", *confirmed_sr.last().unwrap_or(&last_c)),
+            last_vol: *vol_value.last().unwrap_or(&0.0),
+            last_vol_str: format!("{}", *vol_value.last().unwrap_or(&0.0)),
         },
     }
 }

@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const sumCoin = document.getElementById('sum-coin');
     const sumCandles = document.getElementById('sum-candles');
     const sumPrice = document.getElementById('sum-price');
+    const sumSr = document.getElementById('sum-sr');
+    const sumVol = document.getElementById('sum-vol');
     const sumStrats = document.getElementById('sum-strats');
 
     const ldTitle = document.getElementById('ld-title');
@@ -29,7 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const auxContainer = document.getElementById('aux-container');
     const tradesBody = document.getElementById('trades-body');
+    const tradesCards = document.getElementById('trades-cards');
     const positionsBody = document.getElementById('positions-body');
+    const positionsCards = document.getElementById('positions-cards');
 
     const dataStatus = document.getElementById('data-status');
 
@@ -377,13 +381,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderResults(result) {
         if (!result) return;
 
-        // 1. Summary Bar
+        // 1. Summary Bar (Nilai persis tanpa dibulatkan)
         const summary = result.summary;
         const symbol = document.getElementById('symbol').value.trim().toUpperCase();
         const interval = document.getElementById('interval').value;
         sumCoin.textContent = `${symbol} [${interval}]`;
         sumCandles.textContent = `${summary.candles_count} (${summary.start_date.split(' ')[0]} s/d ${summary.end_date.split(' ')[0]})`;
-        sumPrice.textContent = `${summary.last_price.toFixed(2)} USDT`;
+        sumPrice.textContent = `${summary.last_price_str || summary.last_price} USDT`;
+        if (sumSr) sumSr.textContent = `${summary.last_sr_str || summary.last_sr}`;
+        if (sumVol) sumVol.textContent = `±${summary.last_vol_str || summary.last_vol}`;
         sumStrats.textContent = `${summary.filtered_sims} / ${summary.total_sims} Strategi`;
         summaryBar.style.display = 'flex';
         dataStatus.textContent = `${symbol} (${summary.candles_count} candles)`;
@@ -570,59 +576,142 @@ document.addEventListener('DOMContentLoaded', () => {
             dtBody.appendChild(tr);
         });
 
-        // 6. Render Trades & Positions
+        // 6. Render Trades & Positions (Unrounded Precision)
         tradesBody.innerHTML = '';
+        if (tradesCards) tradesCards.innerHTML = '';
         const tradesCount = document.getElementById('trades-count');
         if (dt.recent_trades && dt.recent_trades.length > 0) {
             if (tradesCount) tradesCount.textContent = dt.recent_trades.length;
-            dt.recent_trades.forEach(t => {
-                const tr = document.createElement('tr');
+            dt.recent_trades.forEach((t, idx) => {
+                const trNum = idx + 1;
                 const sideColor = (t.side === 'BUY') ? 'val-good' : 'val-bad';
                 const pnlClass = (t.pnl_color === 'good') ? 'val-good' : 'val-bad';
+                const entryPxVal = t.entryPxStr || t.entryPx;
+                const exitPxVal = t.exitPxStr || t.exitPx;
+                const closePxVal = (t.closePxStr !== undefined && t.closePxStr !== '') ? t.closePxStr : (t.closePx !== undefined ? t.closePx : '-');
+                const srPxVal = (t.srPxStr !== undefined && t.srPxStr !== '') ? t.srPxStr : (t.srPx !== undefined ? t.srPx : '-');
+
+                // Desktop Table Row (11 Kolom Lengkap & Presisi)
+                const tr = document.createElement('tr');
                 tr.innerHTML = `
+                    <td class="font-bold text-dim">#${trNum}</td>
                     <td class="${sideColor} font-bold">${t.side}</td>
                     <td>${t.entryTime}</td>
-                    <td>${t.entryPx}</td>
-                    <td>${t.tpDesc || t.tpPx}</td>
-                    <td>${t.slDesc || t.slPx}</td>
+                    <td class="font-mono">${entryPxVal}</td>
                     <td>${t.exitTime}</td>
-                    <td>${t.exitPx}</td>
-                    <td class="val-highlight">${t.why}</td>
+                    <td class="font-mono">${exitPxVal}</td>
+                    <td class="font-mono val-highlight">${closePxVal}</td>
+                    <td class="font-mono" style="color: var(--accent-blue);">${srPxVal}</td>
+                    <td><span class="badge badge-idle" style="font-size: 10px;">${t.why}</span></td>
                     <td class="${pnlClass}">${t.movePct}</td>
-                    <td class="${pnlClass}">${t.netPnl}</td>
+                    <td class="${pnlClass} font-bold">${t.netPnl}</td>
                 `;
                 tradesBody.appendChild(tr);
+
+                // Mobile Card View
+                if (tradesCards) {
+                    const card = document.createElement('div');
+                    card.style.background = '#151924';
+                    card.style.border = '1px solid var(--border-color)';
+                    card.style.borderRadius = '8px';
+                    card.style.padding = '10px 12px';
+                    card.style.fontSize = '12px';
+
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div>
+                                <span style="font-weight: 700; color: var(--text-dim); margin-right: 6px;">#${trNum}</span>
+                                <span class="badge ${t.side === 'BUY' ? 'badge-online' : 'badge-idle'}" style="font-weight: 700;">${t.side}</span>
+                                <span style="margin-left: 6px; font-size: 11px; color: var(--text-dim);">${t.exitTime}</span>
+                            </div>
+                            <div class="${pnlClass}" style="font-weight: 700;">
+                                ${t.netPnl} (${t.movePct})
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; background: rgba(255,255,255,0.02); padding: 6px; border-radius: 6px;">
+                            <div><span style="color: var(--text-dim);">Entry Px:</span> <strong class="font-mono">${entryPxVal}</strong></div>
+                            <div><span style="color: var(--text-dim);">Exit Px:</span> <strong class="font-mono">${exitPxVal}</strong></div>
+                            <div><span style="color: var(--text-dim);">Close Px:</span> <strong class="font-mono val-highlight">${closePxVal}</strong></div>
+                            <div><span style="color: var(--text-dim);">Level SR:</span> <strong class="font-mono" style="color: var(--accent-blue);">${srPxVal}</strong></div>
+                        </div>
+                        <div style="margin-top: 6px; font-size: 11px; color: var(--text-dim); display: flex; justify-content: space-between;">
+                            <span>Alasan: <strong>${t.why}</strong></span>
+                            <span>TP: ${t.tpDesc || t.tpPx} | SL: ${t.slDesc || t.slPx}</span>
+                        </div>
+                    `;
+                    tradesCards.appendChild(card);
+                }
             });
         } else {
             if (tradesCount) tradesCount.textContent = '0';
-            tradesBody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">Belum ada trade yang ditutup</td></tr>`;
+            tradesBody.innerHTML = `<tr><td colspan="11" class="text-center empty-cell">Belum ada trade yang ditutup</td></tr>`;
+            if (tradesCards) tradesCards.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-dim);">Belum ada trade yang ditutup</div>`;
         }
 
         positionsBody.innerHTML = '';
+        if (positionsCards) positionsCards.innerHTML = '';
         const positionsCount = document.getElementById('positions-count');
         if (dt.open_positions && dt.open_positions.length > 0) {
             if (positionsCount) positionsCount.textContent = dt.open_positions.length;
-            dt.open_positions.forEach(p => {
-                const tr = document.createElement('tr');
+            dt.open_positions.forEach((p, idx) => {
+                const trNum = idx + 1;
                 const sideColor = (p.side === 'BUY') ? 'val-good' : 'val-bad';
                 const pnlClass = (p.pnl_color === 'good') ? 'val-good' : 'val-bad';
+                const entryPxVal = p.entryPxStr || p.entryPx;
+                const closePxVal = (p.currentClosePxStr !== undefined && p.currentClosePxStr !== '') ? p.currentClosePxStr : (p.currentClosePx !== undefined ? p.currentClosePx : '-');
+                const srPxVal = (p.currentSrPxStr !== undefined && p.currentSrPxStr !== '') ? p.currentSrPxStr : (p.currentSrPx !== undefined ? p.currentSrPx : '-');
+
+                // Desktop Table Row
+                const tr = document.createElement('tr');
                 tr.innerHTML = `
+                    <td class="font-bold text-dim">#${trNum}</td>
                     <td class="${sideColor} font-bold">${p.side}</td>
                     <td>${p.entryTime}</td>
-                    <td>${p.entryPx}</td>
+                    <td class="font-mono">${entryPxVal}</td>
+                    <td class="font-mono val-highlight">${closePxVal}</td>
+                    <td class="font-mono" style="color: var(--accent-blue);">${srPxVal}</td>
                     <td>${p.qty}</td>
                     <td>${p.margin} USDT</td>
-                    <td>${p.feeIn} USDT</td>
                     <td>${p.tpDesc || p.tpPx}</td>
                     <td>${p.slDesc || p.slPx}</td>
-                    <td class="${pnlClass}">${p.floatPct}</td>
-                    <td class="${pnlClass}">${p.floatUsdt}</td>
+                    <td class="${pnlClass} font-bold">${p.floatUsdt} (${p.floatPct})</td>
                 `;
                 positionsBody.appendChild(tr);
+
+                // Mobile Card View
+                if (positionsCards) {
+                    const card = document.createElement('div');
+                    card.style.background = '#151924';
+                    card.style.border = '1px solid var(--border-color)';
+                    card.style.borderRadius = '8px';
+                    card.style.padding = '10px 12px';
+                    card.style.fontSize = '12px';
+
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div>
+                                <span style="font-weight: 700; color: var(--text-dim); margin-right: 6px;">#${trNum}</span>
+                                <span class="badge ${p.side === 'BUY' ? 'badge-online' : 'badge-idle'}" style="font-weight: 700;">${p.side}</span>
+                                <span style="margin-left: 6px; font-size: 11px; color: var(--text-dim);">${p.entryTime}</span>
+                            </div>
+                            <div class="${pnlClass}" style="font-weight: 700;">
+                                ${p.floatUsdt} (${p.floatPct})
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; background: rgba(255,255,255,0.02); padding: 6px; border-radius: 6px;">
+                            <div><span style="color: var(--text-dim);">Entry Px:</span> <strong class="font-mono">${entryPxVal}</strong></div>
+                            <div><span style="color: var(--text-dim);">Margin:</span> <strong>${p.margin} USDT</strong></div>
+                            <div><span style="color: var(--text-dim);">Close Px:</span> <strong class="font-mono val-highlight">${closePxVal}</strong></div>
+                            <div><span style="color: var(--text-dim);">Level SR:</span> <strong class="font-mono" style="color: var(--accent-blue);">${srPxVal}</strong></div>
+                        </div>
+                    `;
+                    positionsCards.appendChild(card);
+                }
             });
         } else {
             if (positionsCount) positionsCount.textContent = '0';
-            positionsBody.innerHTML = `<tr><td colspan="10" class="text-center empty-cell">Tidak ada posisi yang sedang terbuka</td></tr>`;
+            positionsBody.innerHTML = `<tr><td colspan="11" class="text-center empty-cell">Tidak ada posisi yang sedang terbuka</td></tr>`;
+            if (positionsCards) positionsCards.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-dim);">Tidak ada posisi yang sedang terbuka</div>`;
         }
     }
 });

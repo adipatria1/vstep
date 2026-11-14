@@ -363,7 +363,7 @@
             </div>
 
             <!-- Summary Bar -->
-            <div id="summary-bar" class="card summary-bar" style="display: none;">
+            <div id="summary-bar" class="card summary-bar" style="display: none; flex-wrap: wrap; gap: 8px;">
                 <div class="summary-item">
                     <span class="lbl">Coin / Pair</span>
                     <span class="val" id="sum-coin">-</span>
@@ -373,8 +373,16 @@
                     <span class="val" id="sum-candles">-</span>
                 </div>
                 <div class="summary-item">
-                    <span class="lbl">Harga Terakhir</span>
-                    <span class="val" id="sum-price">-</span>
+                    <span class="lbl">Harga Close Terakhir</span>
+                    <span class="val font-mono" id="sum-price" style="font-weight: 700; color: #fff;">-</span>
+                </div>
+                <div class="summary-item">
+                    <span class="lbl">Level SR Terakhir</span>
+                    <span class="val font-mono" id="sum-sr" style="font-weight: 700; color: var(--accent-blue);">-</span>
+                </div>
+                <div class="summary-item">
+                    <span class="lbl">Band Volatilitas</span>
+                    <span class="val font-mono" id="sum-vol" style="color: var(--text-dim);">-</span>
                 </div>
                 <div class="summary-item">
                     <span class="lbl">Total Strategi</span>
@@ -483,6 +491,9 @@
                     </div>
 
                     <div id="tab-trades-list" class="tab-content active">
+                        <!-- Mobile Trades Cards List -->
+                        <div id="trades-cards" class="trades-cards-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"></div>
+
                         <div class="table-responsive">
                             <table class="pine-table aux-table">
                                 <thead>
@@ -490,40 +501,46 @@
                                         <th>#</th>
                                         <th>Arah</th>
                                         <th>Entry Waktu</th>
-                                        <th>Entry Px</th>
+                                        <th>Entry Px (SR)</th>
                                         <th>Exit Waktu</th>
                                         <th>Exit Px</th>
+                                        <th>Close Px (Saat Close)</th>
+                                        <th>Level SR (Saat Close)</th>
                                         <th>Alasan Exit</th>
                                         <th>PnL %</th>
-                                        <th>PnL ($)</th>
-                                        <th>Balance ($)</th>
+                                        <th>Net PnL</th>
                                     </tr>
                                 </thead>
                                 <tbody id="trades-body">
-                                    <tr><td colspan="10" class="text-center empty-cell">Belum ada riwayat trade</td></tr>
+                                    <tr><td colspan="11" class="text-center empty-cell">Belum ada riwayat trade</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
                     <div id="tab-positions-list" class="tab-content">
+                        <!-- Mobile Positions Cards List -->
+                        <div id="positions-cards" class="positions-cards-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"></div>
+
                         <div class="table-responsive">
                             <table class="pine-table aux-table">
                                 <thead>
                                     <tr>
                                         <th>#</th>
-                                        <th>Level SR</th>
                                         <th>Arah</th>
-                                        <th>Entry Px</th>
+                                        <th>Entry Waktu</th>
+                                        <th>Entry Px (SR)</th>
+                                        <th>Current Close Px</th>
+                                        <th>Current Level SR</th>
                                         <th>Qty</th>
                                         <th>Margin ($)</th>
-                                        <th>TP Px</th>
-                                        <th>SL Px</th>
-                                        <th>Floating PnL ($)</th>
+                                        <th>TP Target</th>
+                                        <th>SL Target</th>
+                                        <th>Floating PnL</th>
                                     </tr>
                                 </thead>
                                 <tbody id="positions-body">
-                                    <tr><td colspan="9" class="text-center empty-cell">Tidak ada posisi tertahan</td></tr>
+                                    <tr><td colspan="11" class="text-center empty-cell">Tidak ada posisi tertahan</td></tr>
                                 </tbody>
                             </table>
                         </div>
