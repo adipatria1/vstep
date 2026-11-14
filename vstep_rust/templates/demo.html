@@ -244,14 +244,14 @@
                     <div class="form-group">
                         <label for="execution_mode">Mode Eksekusi Order</label>
                         <select id="execution_mode" name="execution_mode">
-                            <option value="pre_close" selected>Pre-Close Sniping (1s Sebelum Candle Tutup)</option>
-                            <option value="realtime_no_lag">Realtime No Lag (Intrabar Langsung)</option>
+                            <option value="realtime_no_lag" selected>Realtime No Lag (Intrabar Langsung / Live Per-Tick)</option>
+                            <option value="pre_close">Pre-Close Sniping (1s Sebelum Candle Tutup)</option>
                             <option value="on_close">On Candle Close (Tepat Pergantian Bar)</option>
                         </select>
-                        <small class="helper-text" id="exec-helper-text">Sniping order dieksekusi 1 detik sebelum candle ditutup (Anti-Repaint & Bebas Slippage).</small>
+                        <small class="helper-text" id="exec-helper-text">Realtime No Lag: Order dieksekusi secara instan saat harga menyentuh S/R (Intrabar live per-tick tanpa delay).</small>
                     </div>
 
-                    <div class="form-group" id="pre-close-buffer-group">
+                    <div class="form-group" id="pre-close-buffer-group" style="display: none;">
                         <label for="pre_close_buffer_ms">Buffer Pre-Close (ms)</label>
                         <input type="number" id="pre_close_buffer_ms" name="pre_close_buffer_ms" value="1000" min="100" max="10000" step="100">
                     </div>
@@ -770,10 +770,10 @@
                 }
 
                 // Metrics
-                if (scanSpotlightSr) scanSpotlightSr.textContent = curSr > 0 ? curSr : '-';
-                if (scanSpotlightBuy) scanSpotlightBuy.textContent = data.breakout_buy > 0 ? `> ${data.breakout_buy}` : '-';
-                if (scanSpotlightSell) scanSpotlightSell.textContent = data.breakout_sell > 0 ? `< ${data.breakout_sell}` : '-';
-                if (scanSpotlightVol) scanSpotlightVol.textContent = curVol > 0 ? `±${curVol}` : '-';
+                if (scanSpotlightSr) scanSpotlightSr.textContent = data.current_sr_str || (curSr > 0 ? curSr : '-');
+                if (scanSpotlightBuy) scanSpotlightBuy.textContent = data.breakout_buy_str ? `> ${data.breakout_buy_str}` : (data.breakout_buy > 0 ? `> ${data.breakout_buy}` : '-');
+                if (scanSpotlightSell) scanSpotlightSell.textContent = data.breakout_sell_str ? `< ${data.breakout_sell_str}` : (data.breakout_sell > 0 ? `< ${data.breakout_sell}` : '-');
+                if (scanSpotlightVol) scanSpotlightVol.textContent = data.current_vol_str ? `±${data.current_vol_str}` : (curVol > 0 ? `±${curVol}` : '-');
 
                 // Status & Strategy
                 if (scanSpotlightStrategy) scanSpotlightStrategy.textContent = data.strategy || 'Auto-Winner Leaderboard';

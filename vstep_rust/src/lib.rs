@@ -50,7 +50,7 @@ pub fn get_cache_dir() -> PathBuf {
 use binance_api::{
     fetch_top_screened_coins, market_close_position, test_testnet_account,
 };
-use bot_runner::{BotConfig, SharedBotState};
+use bot_runner::{format_price_clean, BotConfig, SharedBotState};
 use credentials::{load_credentials, save_credentials, ApiCredentials};
 use engine::{get_all_strategy_keys, run_backtest};
 use fetcher::{fetch_binance_fapi_klines, get_cache_path, load_cached_data, CandleData, FetchProgress};
@@ -379,9 +379,13 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
                 "current_price": lock.current_price,
                 "current_price_str": lock.current_price_str,
                 "current_sr": lock.current_sr,
+                "current_sr_str": format_price_clean(lock.current_sr),
                 "current_vol": lock.current_vol,
+                "current_vol_str": format_price_clean(lock.current_vol),
                 "breakout_buy": if lock.current_sr > 0.0 && lock.current_vol > 0.0 { lock.current_sr + lock.current_vol } else { 0.0 },
+                "breakout_buy_str": format_price_clean(if lock.current_sr > 0.0 && lock.current_vol > 0.0 { lock.current_sr + lock.current_vol } else { 0.0 }),
                 "breakout_sell": if lock.current_sr > 0.0 && lock.current_vol > 0.0 { (lock.current_sr - lock.current_vol).max(0.0) } else { 0.0 },
+                "breakout_sell_str": format_price_clean(if lock.current_sr > 0.0 && lock.current_vol > 0.0 { (lock.current_sr - lock.current_vol).max(0.0) } else { 0.0 }),
                 "scanned_coins": lock.scanned_coins,
                 "strategy": lock.last_selected_strategy,
                 "warmup_symbol": lock.last_warmup_symbol,

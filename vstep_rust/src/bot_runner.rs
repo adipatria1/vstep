@@ -224,7 +224,7 @@ pub struct BotConfig {
     pub volatility_type: String,    // "Stdev", "Atr"
     pub volatility_length: usize,   // 200
     pub vol_mult: f64,              // 4.0
-    pub execution_mode: String,     // "pre_close", "realtime_no_lag", "on_close"
+    pub execution_mode: String,     // "realtime_no_lag", "pre_close", "on_close"
     pub pre_close_buffer_ms: u64,   // 1000 ms
 
     // 2. Mode Koin & Screener
@@ -270,7 +270,7 @@ impl Default for BotConfig {
             volatility_type: "Stdev".to_string(),
             volatility_length: 200,
             vol_mult: 4.0,
-            execution_mode: "pre_close".to_string(),
+            execution_mode: "realtime_no_lag".to_string(),
             pre_close_buffer_ms: 1000,
 
             coin_mode: "top_gainers".to_string(),
@@ -307,6 +307,15 @@ impl Default for BotConfig {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct RollingCandles {
+    pub times: Vec<i64>,
+    pub open: Vec<f64>,
+    pub high: Vec<f64>,
+    pub low: Vec<f64>,
+    pub close: Vec<f64>,
+}
+
 pub struct BotState {
     pub config: BotConfig,
     pub logs: Vec<LogEntry>,
@@ -326,6 +335,8 @@ pub struct BotState {
     pub position_bars_held: i32,
     pub active_trade: Option<ActiveTradeState>,
     pub scanned_coins: Vec<ScannedCoinState>,
+    pub rolling_candles: RollingCandles,
+    pub bar_step_side: Option<String>,
 }
 
 impl BotState {
@@ -356,6 +367,8 @@ impl BotState {
             position_bars_held: 0,
             active_trade: None,
             scanned_coins: Vec::new(),
+            rolling_candles: RollingCandles::default(),
+            bar_step_side: None,
         }
     }
 
@@ -410,6 +423,8 @@ impl SharedBotState {
                 lock.last_evaluated_bar = 0;
                 lock.position_bars_held = 0;
                 lock.active_trade = None;
+                lock.bar_step_side = None;
+                lock.rolling_candles = RollingCandles::default();
 
                 let mode_str = match lock.config.coin_mode.as_str() {
                     "top_gainers" => format!("Top {} Gainers 24h", lock.config.max_active_slots),
@@ -756,6 +771,24 @@ impl SharedBotState {
                         lock.med_h = med_h;
                         lock.med_l = med_l;
                         lock.active_leverage = applied_lev;
+                        lock.rolling_candles = RollingCandles {
+                            times: data.times.clone(),
+                            open: data.open.clone(),
+                            high: data.high.clone(),
+                            low: data.low.clone(),
+                            close: data.close.clone(),
+                        };
+                        if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == target_symbol) {
+                            target.current_sr = cur_sr;
+                            target.current_sr_str = format_price_clean(cur_sr);
+                            target.breakout_buy = cur_sr + cur_vol;
+                            target.breakout_buy_str = format_price_clean(target.breakout_buy);
+                            target.breakout_sell = (cur_sr - cur_vol).max(0.0);
+                            target.breakout_sell_str = format_price_clean(target.breakout_sell);
+                            if cur_sr > 0.0 && target.price > 0.0 {
+                                target.dist_pct = ((target.price - cur_sr) / cur_sr) * 100.0;
+                            }
+                        }
                         lock.add_log(
                             "success",
                             &format!(
@@ -873,6 +906,37 @@ impl SharedBotState {
                                     if !c_px_raw_str.is_empty() {
                                         lock.current_price_str = c_px_raw_str.clone();
                                     }
+
+                                    // Update rolling candle history in-memory live buffer
+                                    let rc = &mut lock.rolling_candles;
+                                    if let Some(&last_t) = rc.times.last() {
+                                        if last_t == t_start {
+                                            let idx = rc.times.len() - 1;
+                                            rc.high[idx] = rc.high[idx].max(h_px);
+                                            rc.low[idx] = rc.low[idx].min(l_px);
+                                            rc.close[idx] = c_px;
+                                        } else if t_start > last_t {
+                                            rc.times.push(t_start);
+                                            rc.open.push(o_px);
+                                            rc.high.push(h_px);
+                                            rc.low.push(l_px);
+                                            rc.close.push(c_px);
+                                            if rc.times.len() > 1000 {
+                                                rc.times.remove(0);
+                                                rc.open.remove(0);
+                                                rc.high.remove(0);
+                                                rc.low.remove(0);
+                                                rc.close.remove(0);
+                                            }
+                                        }
+                                    } else {
+                                        rc.times.push(t_start);
+                                        rc.open.push(o_px);
+                                        rc.high.push(h_px);
+                                        rc.low.push(l_px);
+                                        rc.close.push(c_px);
+                                    }
+
                                     let active_trade_side = lock.active_trade.as_ref().map(|t| t.side.clone());
                                     if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == symbol) {
                                         target.price = c_px;
@@ -1058,10 +1122,33 @@ impl SharedBotState {
                                         lock.active_trade = None;
                                         lock.add_log("trade", &format!("🏁 [EXIT {}] Menutup posisi {} {} @ {:.4} {}", why, side, sym, exit_px, pnl_str));
                                     }
+
+                                    // 2b. RECALCULATE DYNAMIC VOLATILITY ON CANDLE CLOSE
+                                    {
+                                        let mut lock = state_arc.lock().unwrap();
+                                        if lock.rolling_candles.close.len() >= lock.config.volatility_length {
+                                            let vol_series = calculate_volatility(
+                                                &lock.rolling_candles.high,
+                                                &lock.rolling_candles.low,
+                                                &lock.rolling_candles.close,
+                                                &lock.config.volatility_type,
+                                                lock.config.volatility_length,
+                                                lock.config.vol_mult,
+                                            );
+                                            if let Some(&new_vol) = vol_series.last() {
+                                                if !new_vol.is_nan() && new_vol > 0.0 {
+                                                    lock.current_vol = new_vol;
+                                                }
+                                            }
+                                        }
+                                        if lock.config.execution_mode != "realtime_no_lag" {
+                                            lock.bar_step_side = None;
+                                        }
+                                    }
                                 }
 
                                 // ========================================================
-                                // 3. STEP S/R BREAKOUT DETECTION & PRE-CLOSE SNIPING ENTRY
+                                // 3. STEP S/R BREAKOUT DETECTION & REALTIME / PRE-CLOSE ENTRY
                                 // ========================================================
                                 let (cur_sr, cur_vol, line_mode, exec_mode, pre_close_buf_ms, active_sim, med_h, med_l, lev, margin_pct, one_way_rule) = {
                                     let lock = state_arc.lock().unwrap();
@@ -1081,215 +1168,251 @@ impl SharedBotState {
                                 };
 
                                 let is_breakout = cur_vol > 0.0 && cur_sr > 0.0 && (c_px - cur_sr).abs() > cur_vol;
+                                let mut step_happened = false;
+                                let mut step_up = false;
 
-                                let (should_evaluate, is_preclose_trigger) = match exec_mode.as_str() {
+                                if is_breakout {
+                                    step_up = c_px > cur_sr;
+                                    let new_sr = if line_mode == "Anchor" {
+                                        c_px
+                                    } else {
+                                        let mut step_sr = cur_sr;
+                                        while (c_px - step_sr).abs() > cur_vol {
+                                            if c_px > step_sr {
+                                                step_sr += cur_vol;
+                                            } else {
+                                                step_sr -= cur_vol;
+                                            }
+                                        }
+                                        step_sr
+                                    };
+
+                                    {
+                                        let mut lock = state_arc.lock().unwrap();
+                                        let old_sr = lock.current_sr;
+                                        lock.current_sr = new_sr;
+                                        if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == symbol) {
+                                            target.current_sr = new_sr;
+                                            target.current_sr_str = format_price_clean(new_sr);
+                                            target.breakout_buy = new_sr + cur_vol;
+                                            target.breakout_buy_str = format_price_clean(target.breakout_buy);
+                                            target.breakout_sell = (new_sr - cur_vol).max(0.0);
+                                            target.breakout_sell_str = format_price_clean(target.breakout_sell);
+                                        }
+                                        lock.bar_step_side = Some(if step_up { "BUY".to_string() } else { "SELL".to_string() });
+                                        lock.add_log(
+                                            "info",
+                                            &format!(
+                                                "📈 [S/R STEP LIVE] {} Level S/R bergeser: {:.4} ➔ {:.4} (Band: {:.4})",
+                                                symbol, old_sr, new_sr, cur_vol
+                                            ),
+                                        );
+                                    }
+                                    step_happened = true;
+                                }
+
+                                // Evaluasi pemicu order sesuai mode eksekusi
+                                let (should_execute, is_preclose_trigger, sig_step_up) = match exec_mode.as_str() {
+                                    "realtime_no_lag" => {
+                                        // Dieksekusi secara instan pada detik / tick saat S/R step tertembus!
+                                        (step_happened, false, step_up)
+                                    }
                                     "pre_close" => {
                                         let in_snipe_window = time_left_ms <= pre_close_buf_ms as i64 && time_left_ms > -3000;
-                                        let lock = state_arc.lock().unwrap();
-                                        (in_snipe_window && lock.last_evaluated_bar != t_start, true)
-                                    }
-                                    "realtime_no_lag" => {
-                                        let lock = state_arc.lock().unwrap();
-                                        (is_breakout && lock.last_evaluated_bar != t_start, false)
+                                        let mut lock = state_arc.lock().unwrap();
+                                        if in_snipe_window && lock.last_evaluated_bar != t_start {
+                                            lock.last_evaluated_bar = t_start;
+                                            if let Some(side) = lock.bar_step_side.take() {
+                                                (true, true, side == "BUY")
+                                            } else if is_breakout {
+                                                (true, true, step_up)
+                                            } else {
+                                                (false, true, false)
+                                            }
+                                        } else {
+                                            (false, true, false)
+                                        }
                                     }
                                     _ => {
                                         // on_close
-                                        let lock = state_arc.lock().unwrap();
-                                        (is_closed && lock.last_evaluated_bar != t_start, false)
+                                        let mut lock = state_arc.lock().unwrap();
+                                        if is_closed && lock.last_evaluated_bar != t_start {
+                                            lock.last_evaluated_bar = t_start;
+                                            if let Some(side) = lock.bar_step_side.take() {
+                                                (true, false, side == "BUY")
+                                            } else if is_breakout {
+                                                (true, false, step_up)
+                                            } else {
+                                                (false, false, false)
+                                            }
+                                        } else {
+                                            (false, false, false)
+                                        }
                                     }
                                 };
 
-                                if should_evaluate {
-                                    {
-                                        let mut lock = state_arc.lock().unwrap();
-                                        lock.last_evaluated_bar = t_start;
+                                if should_execute {
+                                    let sim = active_sim.unwrap_or_else(|| ActiveSimConfig::default_trend());
+                                    let sig_side = match sim.mode {
+                                        1 => if sig_step_up { "BUY" } else { "SELL" },      // TREND
+                                        2 => if sig_step_up { "SELL" } else { "BUY" },      // COUNTER
+                                        _ => if sig_step_up { "BUY" } else { "SELL" },      // HEDGE default
+                                    };
+
+                                    let mut can_open_new = true;
+                                    let existing_pos = {
+                                        let lock = state_arc.lock().unwrap();
+                                        lock.active_trade.clone()
+                                    };
+
+                                    if let Some(ref trade) = existing_pos {
+                                        if trade.sl_next_sr {
+                                            let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
+                                            let mut lock = state_arc.lock().unwrap();
+                                            lock.active_trade = None;
+                                            lock.add_log("trade", &format!("🏁 [EXIT NEXT SR] Menutup posisi {} {} karena level SR baru terbentuk.", trade.side, trade.symbol));
+                                        } else if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
+                                            let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
+                                            let mut lock = state_arc.lock().unwrap();
+                                            lock.active_trade = None;
+                                            lock.add_log("info", &format!("🔄 [ONE-WAY] Menutup posisi lama {} {} sebelum membuka posisi baru di SR baru.", trade.side, trade.symbol));
+                                        } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
+                                            if trade.side == sig_side {
+                                                let mut lock = state_arc.lock().unwrap();
+                                                lock.add_log("info", &format!("🛡️ [ONE-WAY HOLD] Sinyal {} searah dengan posisi aktif. Skip buka baru.", sig_side));
+                                                can_open_new = false;
+                                            } else {
+                                                let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
+                                                let mut lock = state_arc.lock().unwrap();
+                                                lock.active_trade = None;
+                                                lock.add_log("info", &format!("🔄 [ONE-WAY REVERSE] Membalik arah posisi dari {} ke {}.", trade.side, sig_side));
+                                            }
+                                        } else {
+                                            // Tahan Posisi Lama (Skip SR Baru)
+                                            let mut lock = state_arc.lock().unwrap();
+                                            lock.add_log("info", &format!("🛡️ [ONE-WAY SKIP] Posisi {} {} masih terbuka. Melewatkan sinyal baru.", trade.symbol, trade.side));
+                                            can_open_new = false;
+                                        }
                                     }
 
-                                    if is_breakout {
-                                        let up_step = c_px > cur_sr;
-                                        let new_sr = if line_mode == "Anchor" {
-                                            c_px
-                                        } else {
-                                            cur_sr + (if up_step { 1.0 } else { -1.0 }) * cur_vol
-                                        };
-
-                                        {
-                                            let mut lock = state_arc.lock().unwrap();
-                                            let old_sr = lock.current_sr;
-                                            lock.current_sr = new_sr;
-                                            if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == symbol) {
-                                                target.current_sr = new_sr;
-                                                target.current_sr_str = format_price_clean(new_sr);
-                                                target.breakout_buy = new_sr + cur_vol;
-                                                target.breakout_buy_str = format_price_clean(target.breakout_buy);
-                                                target.breakout_sell = (new_sr - cur_vol).max(0.0);
-                                                target.breakout_sell_str = format_price_clean(target.breakout_sell);
-                                            }
-                                            lock.add_log("info", &format!("📈 [S/R STEP BREAKOUT] {} Level S/R bergeser: {:.4} ➔ {:.4} (Band: {:.4})", symbol, old_sr, new_sr, cur_vol));
-                                        }
-
-                                        let sim = active_sim.unwrap_or_else(|| ActiveSimConfig::default_trend());
-                                        let sig_side = match sim.mode {
-                                            1 => if up_step { "BUY" } else { "SELL" },      // TREND
-                                            2 => if up_step { "SELL" } else { "BUY" },      // COUNTER
-                                            _ => if up_step { "BUY" } else { "SELL" },      // HEDGE default
-                                        };
-
-                                        let mut can_open_new = true;
-                                        let existing_pos = {
+                                    if can_open_new {
+                                        let wallet_bal = {
                                             let lock = state_arc.lock().unwrap();
-                                            lock.active_trade.clone()
+                                            lock.cached_balance.as_ref().map(|b| b.wallet_balance).unwrap_or(1000.0)
                                         };
+                                        let slot_margin = wallet_bal * (margin_pct / 100.0);
+                                        let notional = slot_margin * (lev as f64);
+                                        let raw_qty = notional / c_px;
 
-                                        if let Some(ref trade) = existing_pos {
-                                            if trade.sl_next_sr {
-                                                let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
-                                                let mut lock = state_arc.lock().unwrap();
-                                                lock.active_trade = None;
-                                                lock.add_log("trade", &format!("🏁 [EXIT NEXT SR] Menutup posisi {} {} karena level SR baru terbentuk.", trade.side, trade.symbol));
-                                            } else if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
-                                                let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
-                                                let mut lock = state_arc.lock().unwrap();
-                                                lock.active_trade = None;
-                                                lock.add_log("info", &format!("🔄 [ONE-WAY] Menutup posisi lama {} {} sebelum membuka posisi baru di SR baru.", trade.side, trade.symbol));
-                                            } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
-                                                if trade.side == sig_side {
-                                                    let mut lock = state_arc.lock().unwrap();
-                                                    lock.add_log("info", &format!("🛡️ [ONE-WAY HOLD] Sinyal {} searah dengan posisi aktif. Skip buka baru.", sig_side));
-                                                    can_open_new = false;
+                                        match market_open_position(&symbol, sig_side, raw_qty, &creds.demo_api_key, &creds.demo_secret_key) {
+                                            Ok((order_id, actual_qty, qty_str)) => {
+                                                let dir_f = if sig_side == "BUY" { 1.0 } else { -1.0 };
+                                                let fav_m = if sig_side == "BUY" { med_h } else { med_l };
+                                                let adv_m = if sig_side == "BUY" { med_l } else { med_h };
+
+                                                let tp_p = match sim.tp_t {
+                                                    1 => Some(fav_m * sim.tp_v),
+                                                    2 => Some(sim.tp_v),
+                                                    _ => None,
+                                                };
+                                                let tp_px = tp_p.map(|p| c_px * (1.0 + dir_f * p / 100.0));
+
+                                                let sl_p = match sim.sl_t {
+                                                    1 => Some(adv_m * sim.sl_v),
+                                                    2 => Some(sim.sl_v),
+                                                    _ => None,
+                                                };
+                                                let sl_px = sl_p.map(|p| c_px * (1.0 - dir_f * p / 100.0));
+
+                                                let (use_tr, tr_act_pct, tr_dist_pct) = if sim.use_tr {
+                                                    let a = if sim.tr_u == 1 { fav_m * sim.tr_a } else { sim.tr_a };
+                                                    let d = if sim.tr_u == 1 { fav_m * sim.tr_d } else { sim.tr_d };
+                                                    (true, a, d)
                                                 } else {
-                                                    let _ = market_close_position(&trade.symbol, &trade.side, trade.quantity, &creds.demo_api_key, &creds.demo_secret_key);
-                                                    let mut lock = state_arc.lock().unwrap();
-                                                    lock.active_trade = None;
-                                                    lock.add_log("info", &format!("🔄 [ONE-WAY REVERSE] Membalik arah posisi dari {} ke {}.", trade.side, sig_side));
-                                                }
-                                            } else {
-                                                // Tahan Posisi Lama (Skip SR Baru)
+                                                    (false, 0.0, 0.0)
+                                                };
+
+                                                let is_bar_tp = sim.tp_t >= 3;
+                                                let b_tp_type = if is_bar_tp { sim.tp_t } else { 0 };
+                                                let b_tp_tgt = if is_bar_tp { sim.tp_v as i32 } else { 0 };
+
+                                                let is_bar_sl = sim.sl_t >= 3;
+                                                let b_sl_type = if is_bar_sl { sim.sl_t } else { 0 };
+                                                let b_sl_tgt = if is_bar_sl { sim.sl_v as i32 } else { 0 };
+
+                                                let sl_next_sr = sim.sl_t == 0;
+
+                                                let tp_desc = if let Some(tp) = tp_px {
+                                                    format!("{:.4}", tp)
+                                                } else if use_tr {
+                                                    format!("Trail({:.2}%/{:.2}%)", tr_act_pct, tr_dist_pct)
+                                                } else if b_tp_type == 3 {
+                                                    format!("BarFix({}b)", b_tp_tgt)
+                                                } else if b_tp_type == 4 {
+                                                    format!("BarProf(>={}b)", b_tp_tgt)
+                                                } else if b_tp_type == 5 {
+                                                    format!("BarDir({}c)", b_tp_tgt)
+                                                } else {
+                                                    "-".to_string()
+                                                };
+
+                                                let sl_desc = if let Some(sl) = sl_px {
+                                                    format!("{:.4}", sl)
+                                                } else if b_sl_type == 3 {
+                                                    format!("BarLoss(>={}b)", b_sl_tgt)
+                                                } else if b_sl_type == 4 {
+                                                    format!("MaxBar({}b)", b_sl_tgt)
+                                                } else if b_sl_type == 5 {
+                                                    format!("BarAdv({}c)", b_sl_tgt)
+                                                } else {
+                                                    "NextSR".to_string()
+                                                };
+
+                                                let new_trade = ActiveTradeState {
+                                                    symbol: symbol.clone(),
+                                                    side: sig_side.to_string(),
+                                                    entry_price: c_px,
+                                                    quantity: actual_qty,
+                                                    entry_time_ms: now_ms,
+                                                    tp_price: tp_px,
+                                                    sl_price: sl_px,
+                                                    tp_desc: tp_desc.clone(),
+                                                    sl_desc: sl_desc.clone(),
+                                                    use_trailing: use_tr,
+                                                    tr_act_pct,
+                                                    tr_dist_pct,
+                                                    tr_extreme: c_px,
+                                                    tr_stop_price: None,
+                                                    tp_bar_type: b_tp_type,
+                                                    tp_bar_target: b_tp_tgt,
+                                                    sl_bar_type: b_sl_type,
+                                                    sl_bar_target: b_sl_tgt,
+                                                    bars_held: 0,
+                                                    dir_candle_count: 0,
+                                                    adv_candle_count: 0,
+                                                    sl_next_sr,
+                                                };
+
+                                                let tag = if is_preclose_trigger {
+                                                    format!("🎯 [PRE-CLOSE SNIPER (Sisa: {}ms)]", time_left_ms)
+                                                } else {
+                                                    "⚡ [SR BREAKOUT EXECUTED LIVE]".to_string()
+                                                };
+
                                                 let mut lock = state_arc.lock().unwrap();
-                                                lock.add_log("info", &format!("🛡️ [ONE-WAY SKIP] Posisi {} {} masih terbuka. Melewatkan sinyal baru.", trade.symbol, trade.side));
-                                                can_open_new = false;
+                                                lock.active_trade = Some(new_trade);
+                                                lock.position_bars_held = 0;
+                                                lock.add_log(
+                                                    "trade",
+                                                    &format!(
+                                                        "{} Order #{} {} {} {} @ {:.4} BERHASIL! | Lev: {}x | TP: {} | SL: {} | Strategi: {}",
+                                                        tag, order_id, sig_side, qty_str, symbol, c_px, lev, tp_desc, sl_desc, sim.key
+                                                    ),
+                                                );
                                             }
-                                        }
-
-                                        if can_open_new {
-                                            let wallet_bal = {
-                                                let lock = state_arc.lock().unwrap();
-                                                lock.cached_balance.as_ref().map(|b| b.wallet_balance).unwrap_or(1000.0)
-                                            };
-                                            let slot_margin = wallet_bal * (margin_pct / 100.0);
-                                            let notional = slot_margin * (lev as f64);
-                                            let raw_qty = notional / c_px;
-
-                                            match market_open_position(&symbol, sig_side, raw_qty, &creds.demo_api_key, &creds.demo_secret_key) {
-                                                Ok((order_id, actual_qty, qty_str)) => {
-                                                    let dir_f = if sig_side == "BUY" { 1.0 } else { -1.0 };
-                                                    let fav_m = if sig_side == "BUY" { med_h } else { med_l };
-                                                    let adv_m = if sig_side == "BUY" { med_l } else { med_h };
-
-                                                    let tp_p = match sim.tp_t {
-                                                        1 => Some(fav_m * sim.tp_v),
-                                                        2 => Some(sim.tp_v),
-                                                        _ => None,
-                                                    };
-                                                    let tp_px = tp_p.map(|p| c_px * (1.0 + dir_f * p / 100.0));
-
-                                                    let sl_p = match sim.sl_t {
-                                                        1 => Some(adv_m * sim.sl_v),
-                                                        2 => Some(sim.sl_v),
-                                                        _ => None,
-                                                    };
-                                                    let sl_px = sl_p.map(|p| c_px * (1.0 - dir_f * p / 100.0));
-
-                                                    let (use_tr, tr_act_pct, tr_dist_pct) = if sim.use_tr {
-                                                        let a = if sim.tr_u == 1 { fav_m * sim.tr_a } else { sim.tr_a };
-                                                        let d = if sim.tr_u == 1 { fav_m * sim.tr_d } else { sim.tr_d };
-                                                        (true, a, d)
-                                                    } else {
-                                                        (false, 0.0, 0.0)
-                                                    };
-
-                                                    let is_bar_tp = sim.tp_t >= 3;
-                                                    let b_tp_type = if is_bar_tp { sim.tp_t } else { 0 };
-                                                    let b_tp_tgt = if is_bar_tp { sim.tp_v as i32 } else { 0 };
-
-                                                    let is_bar_sl = sim.sl_t >= 3;
-                                                    let b_sl_type = if is_bar_sl { sim.sl_t } else { 0 };
-                                                    let b_sl_tgt = if is_bar_sl { sim.sl_v as i32 } else { 0 };
-
-                                                    let sl_next_sr = sim.sl_t == 0;
-
-                                                    let tp_desc = if let Some(tp) = tp_px {
-                                                        format!("{:.4}", tp)
-                                                    } else if use_tr {
-                                                        format!("Trail({:.2}%/{:.2}%)", tr_act_pct, tr_dist_pct)
-                                                    } else if b_tp_type == 3 {
-                                                        format!("BarFix({}b)", b_tp_tgt)
-                                                    } else if b_tp_type == 4 {
-                                                        format!("BarProf(>={}b)", b_tp_tgt)
-                                                    } else if b_tp_type == 5 {
-                                                        format!("BarDir({}c)", b_tp_tgt)
-                                                    } else {
-                                                        "-".to_string()
-                                                    };
-
-                                                    let sl_desc = if let Some(sl) = sl_px {
-                                                        format!("{:.4}", sl)
-                                                    } else if b_sl_type == 3 {
-                                                        format!("BarLoss(>={}b)", b_sl_tgt)
-                                                    } else if b_sl_type == 4 {
-                                                        format!("MaxBar({}b)", b_sl_tgt)
-                                                    } else if b_sl_type == 5 {
-                                                        format!("BarAdv({}c)", b_sl_tgt)
-                                                    } else {
-                                                        "NextSR".to_string()
-                                                    };
-
-                                                    let new_trade = ActiveTradeState {
-                                                        symbol: symbol.clone(),
-                                                        side: sig_side.to_string(),
-                                                        entry_price: c_px,
-                                                        quantity: actual_qty,
-                                                        entry_time_ms: now_ms,
-                                                        tp_price: tp_px,
-                                                        sl_price: sl_px,
-                                                        tp_desc: tp_desc.clone(),
-                                                        sl_desc: sl_desc.clone(),
-                                                        use_trailing: use_tr,
-                                                        tr_act_pct,
-                                                        tr_dist_pct,
-                                                        tr_extreme: c_px,
-                                                        tr_stop_price: None,
-                                                        tp_bar_type: b_tp_type,
-                                                        tp_bar_target: b_tp_tgt,
-                                                        sl_bar_type: b_sl_type,
-                                                        sl_bar_target: b_sl_tgt,
-                                                        bars_held: 0,
-                                                        dir_candle_count: 0,
-                                                        adv_candle_count: 0,
-                                                        sl_next_sr,
-                                                    };
-
-                                                    let tag = if is_preclose_trigger {
-                                                        format!("🎯 [PRE-CLOSE SNIPER (Sisa: {}ms)]", time_left_ms)
-                                                    } else {
-                                                        "⚡ [SR BREAKOUT EXECUTED]".to_string()
-                                                    };
-
-                                                    let mut lock = state_arc.lock().unwrap();
-                                                    lock.active_trade = Some(new_trade);
-                                                    lock.position_bars_held = 0;
-                                                    lock.add_log(
-                                                        "trade",
-                                                        &format!(
-                                                            "{} Order #{} {} {} {} @ {:.4} BERHASIL! | Lev: {}x | TP: {} | SL: {} | Strategi: {}",
-                                                            tag, order_id, sig_side, qty_str, symbol, c_px, lev, tp_desc, sl_desc, sim.key
-                                                        ),
-                                                    );
-                                                }
-                                                Err(e) => {
-                                                    let mut lock = state_arc.lock().unwrap();
-                                                    lock.add_log("error", &format!("❌ Gagal eksekusi order {} {}: {}", sig_side, symbol, e));
-                                                }
+                                            Err(e) => {
+                                                let mut lock = state_arc.lock().unwrap();
+                                                lock.add_log("error", &format!("❌ Gagal eksekusi order {} {}: {}", sig_side, symbol, e));
                                             }
                                         }
                                     }
