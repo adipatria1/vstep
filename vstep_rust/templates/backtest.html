@@ -12,8 +12,21 @@
 </head>
 <body class="dark-theme">
     <div class="main-container">
+        <!-- Apple iOS Top Navigation Bar -->
+        <header class="ios-navbar" style="width: 100%;">
+            <a href="/" class="ios-nav-back">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                <span>Menu Utama</span>
+            </a>
+            <h1 class="ios-nav-title">Backtest Strategi Futures</h1>
+            <div class="ios-nav-trailing">
+                <span id="backend-status" class="badge badge-online">Ready</span>
+            </div>
+        </header>
+
         <!-- Hidden status bridges for JS compatibility -->
-        <span id="backend-status" style="display:none;">Ready</span>
         <span id="data-status" style="display:none;">No Data</span>
 
         <!-- Control Panel (Mobile-First Card) -->
@@ -97,11 +110,11 @@
 
                     <!-- Action Buttons Direct on Top Card -->
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
-                        <button type="button" id="btn-run" class="btn btn-primary" style="padding: 14px; font-size: 14px; font-weight: 800; border-radius: 8px;">
-                            ⚡ FETCH & JALANKAN STRATEGY FINDER
+                        <button type="button" id="btn-run" class="btn btn-primary" style="padding: 13px; font-size: 13px; font-weight: 700;">
+                            Fetch & Jalankan Backtest
                         </button>
-                        <button type="button" id="btn-recalc" class="btn btn-secondary" style="padding: 10px; font-size: 12px; font-weight: 700; border-radius: 8px;">
-                            🔄 Hitung Ulang Cepat (RAM / Cache)
+                        <button type="button" id="btn-recalc" class="btn btn-secondary" style="padding: 10px; font-size: 12px; font-weight: 600;">
+                            Hitung Ulang Cepat (RAM)
                         </button>
                     </div>
                 </div>
@@ -109,7 +122,7 @@
                 <!-- Collapsible Detailed Parameters Accordion -->
                 <details class="mobile-param-drawer">
                     <summary class="param-drawer-summary">
-                        <span>⚙️ Parameter Lengkap & Filter Strategi</span>
+                        <span>Parameter Lengkap & Filter Strategi</span>
                         <span class="chevron">▼</span>
                     </summary>
                     <div class="drawer-inner">
@@ -358,8 +371,7 @@
                     <div id="progress-bar" class="progress-fill" style="width: 0%;"></div>
                 </div>
                 <div id="milestone-alert" class="milestone-box" style="display: none;">
-                    <span class="pulse-icon">⏳</span>
-                    <span id="milestone-text">Jeda 1 menit sesuai aturan Binance...</span>
+                    <span id="milestone-text">Jeda 1 menit sesuai batas request Binance...</span>
                 </div>
             </div>
 
@@ -379,7 +391,7 @@
                 </div>
                 <div class="summary-item">
                     <span class="lbl">Level SR Terakhir</span>
-                    <span class="val font-mono" id="sum-sr" style="font-weight: 700; color: var(--accent-blue);">-</span>
+                    <span class="val font-mono" id="sum-sr" style="font-weight: 700; color: var(--primary-blue);">-</span>
                 </div>
                 <div class="summary-item">
                     <span class="lbl">Band Volatilitas</span>
@@ -418,7 +430,7 @@
                 <!-- Category Winners Showcase -->
                 <div class="cat-winners-container" id="cat-winners-wrap" style="display: none;">
                     <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px;">
-                        🏆 Pemenang Terbaik Per Kategori
+                        Pemenang Terbaik Per Kategori
                     </div>
                     <div class="cat-winners-grid" id="cat-winners-grid"></div>
                 </div>
@@ -426,7 +438,7 @@
                 <!-- Mobile Strategy Cards List (Default for Phone) -->
                 <div id="ld-cards" class="strat-cards-list">
                     <div style="text-align: center; padding: 30px 10px; color: var(--text-dim);">
-                        Klik <strong>"FETCH & JALANKAN STRATEGY FINDER"</strong> untuk memulai simulasi 105 strategi.
+                        Klik <strong>"Fetch & Jalankan Backtest"</strong> untuk memulai simulasi 105 strategi.
                     </div>
                 </div>
 

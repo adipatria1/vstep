@@ -13,103 +13,95 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#12161f">
+    <meta name="theme-color" content="#000000">
 </head>
 <body class="dark-theme home-page">
-    <div class="phone-wrapper" style="padding-top: 16px;">
-        <!-- 4 Grid Boxes (Phone App Tiles) -->
+    <div class="phone-wrapper">
+        <header class="home-header">
+            <h1 class="brand-title">VolStep Terminal</h1>
+            <p class="brand-subtitle">Binance Futures Algorithmic Trading Suite</p>
+        </header>
+
+        <!-- 4 Grid Boxes (Apple Inset Grouped Tiles) -->
         <main class="apps-grid-container">
             <!-- Box 1: Backtest -->
             <a href="/backtest" class="app-card active-card">
-                <div class="app-card-glow"></div>
                 <div class="app-card-inner">
-                    <div class="app-icon-wrapper icon-blue">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                        </svg>
+                    <div class="app-card-header">
+                        <span class="app-tag tag-available">Tersedia</span>
                     </div>
                     <div class="app-info">
-                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
-                        <h2 class="app-title">1. Backtest Strategy</h2>
-                        <p class="app-desc">Simulator 105 strategi Binance Futures Cross Margin, Step S/R, Multi-lookback, Base Bar (TP/SL) & Leaderboard.</p>
+                        <h2 class="app-title">Backtest Strategi</h2>
+                        <p class="app-desc">Simulator 105 strategi Binance Futures Cross Margin, Step S/R, Multi-lookback, Base Bar TP/SL & Leaderboard.</p>
                     </div>
-                    <div class="app-arrow">➔</div>
+                    <div class="app-card-footer">
+                        <svg class="ios-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
                 </div>
             </a>
 
             <!-- Box 2: Demo Binance -->
             <a href="/demo" class="app-card active-card">
-                <div class="app-card-glow"></div>
                 <div class="app-card-inner">
-                    <div class="app-icon-wrapper icon-amber">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M10 2v7.31L4.62 18.2A2 2 0 0 0 6.31 21h11.38a2 2 0 0 0 1.69-2.8L14 9.31V2h-4z"></path>
-                            <line x1="8.5" y1="2" x2="15.5" y2="2"></line>
-                        </svg>
+                    <div class="app-card-header">
+                        <span class="app-tag tag-available">Tersedia</span>
                     </div>
                     <div class="app-info">
-                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
-                        <h2 class="app-title">2. Demo Binance</h2>
-                        <p class="app-desc">Bot otomatis Testnet: Auto-screener Top Gainers/Volume, Auto Max Leverage, Live Position & Terminal Log.</p>
+                        <h2 class="app-title">Demo Binance</h2>
+                        <p class="app-desc">Bot otomatis Testnet dengan Pre-Close Sniper, Auto-Screener 24h, live position, dan WebSocket streaming.</p>
                     </div>
-                    <div class="app-arrow">➔</div>
+                    <div class="app-card-footer">
+                        <svg class="ios-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
                 </div>
             </a>
 
             <!-- Box 3: Real Akun Binance -->
             <a href="/real" class="app-card standby-card">
                 <div class="app-card-inner">
-                    <div class="app-icon-wrapper icon-emerald">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                        </svg>
+                    <div class="app-card-header">
+                        <span class="app-tag tag-upcoming">Segera Hadir</span>
                     </div>
                     <div class="app-info">
-                        <span class="app-tag tag-standby">SEGERA HADIR</span>
-                        <h2 class="app-title">3. Real Akun Binance</h2>
+                        <h2 class="app-title">Real Akun Binance</h2>
                         <p class="app-desc">Eksekusi otomatis posisi riil di Binance Futures USDT-M dengan margin protection.</p>
                     </div>
-                    <div class="app-arrow lock">🔒</div>
+                    <div class="app-card-footer">
+                        <svg class="ios-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </div>
                 </div>
             </a>
 
             <!-- Box 4: Setting API Binance -->
             <a href="/settings" class="app-card active-card">
-                <div class="app-card-glow"></div>
                 <div class="app-card-inner">
-                    <div class="app-icon-wrapper icon-purple">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="3"></circle>
-                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                        </svg>
+                    <div class="app-card-header">
+                        <span class="app-tag tag-config">Pengaturan</span>
                     </div>
                     <div class="app-info">
-                        <span class="app-tag tag-active">READY • KLIK DISINI</span>
-                        <h2 class="app-title">4. Setting API Binance</h2>
-                        <p class="app-desc">Simpan aman API Key & Secret di penyimpanan lokal Anda dan uji koneksi Testnet.</p>
+                        <h2 class="app-title">Kredensial & Cache</h2>
+                        <p class="app-desc">Kelola aman API Key, Secret Key Binance Testnet/Real, dan optimasi pembersihan cache candlestick.</p>
                     </div>
-                    <div class="app-arrow">➔</div>
+                    <div class="app-card-footer">
+                        <svg class="ios-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
                 </div>
             </a>
         </main>
 
-        <!-- Phone Footer Navigation -->
         <footer class="home-footer">
             <span class="footer-text">VolStep High-Speed Algorithmic Trading Suite</span>
             <span class="footer-sub">Optimized for Ultra-Low RAM & Realtime Binance FAPI</span>
         </footer>
     </div>
-
-    <script>
-        // Update live clock
-        function updateClock() {
-            const now = new Date();
-            const h = String(now.getHours()).padStart(2, '0');
-            const m = String(now.getMinutes()).padStart(2, '0');
-            document.getElementById('live-clock').textContent = `${h}:${m}`;
-        }
-        updateClock();
-        setInterval(updateClock, 1000);
-    </script>
 </body>
 </html>

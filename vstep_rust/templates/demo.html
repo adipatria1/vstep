@@ -12,11 +12,24 @@
 </head>
 <body class="dark-theme">
     <div class="main-container" style="max-width: 1000px; margin: 0 auto; padding: 12px;">
+        <!-- Apple iOS Navigation Bar -->
+        <header class="ios-navbar">
+            <a href="/" class="ios-nav-back">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                <span>Menu Utama</span>
+            </a>
+            <h1 class="ios-nav-title">Demo Binance Futures</h1>
+            <div class="ios-nav-trailing">
+                <span id="conn-status-badge" class="badge badge-online">API OK</span>
+            </div>
+        </header>
+
         <!-- Hidden status bridges for JS compatibility -->
         <span id="bot-status-badge" style="display:none;">Stopped</span>
-        <span id="conn-status-badge" style="display:none;">API OK</span>
 
-        <!-- Hero Wallet Card (Binance Futures Mobile Style) -->
+        <!-- Hero Wallet Card (Apple HIG Financial Card) -->
         <div class="demo-hero-wallet">
             <div class="dhw-top">
                 <div class="dhw-balance-box">
@@ -47,10 +60,10 @@
 
         <!-- Engine Controller Actions -->
         <div style="display: flex; gap: 10px; margin-bottom: 14px;">
-            <button type="button" id="btn-toggle-bot" class="btn btn-primary" style="flex: 2; padding: 14px; font-size: 14px; font-weight: 800; border-radius: 8px;">
+            <button type="button" id="btn-toggle-bot" class="btn btn-primary" style="flex: 2; padding: 13px; font-size: 13px; font-weight: 700;">
                 START DEMO BOT
             </button>
-            <button type="button" id="btn-panic-close" class="btn btn-secondary" style="flex: 1; padding: 14px; font-size: 12px; font-weight: 700; border-radius: 8px; background: rgba(242, 54, 69, 0.15); border-color: var(--bad-red); color: var(--bad-red);">
+            <button type="button" id="btn-panic-close" class="btn btn-danger" style="flex: 1; padding: 13px; font-size: 12px; font-weight: 700;">
                 PANIC CLOSE
             </button>
         </div>
@@ -164,11 +177,11 @@
                 </div>
             </div>
 
-            <!-- Radar / Scanned Coins List (untuk Screener & Multi-Coin) -->
-            <div class="card" style="padding: 14px; background: #11141d; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 12px;">
+            <!-- Radar / Scanned Coins List (Apple HIG List) -->
+            <div class="card" style="padding: 14px 16px; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 12px;">
                 <div class="section-header" style="margin-bottom: 10px;">
-                    <h3 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-white);">
-                        🎯 Radar Koin Pemindaian (<span id="radar-count-badge">0</span>)
+                    <h3 style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim);">
+                        Radar Pemindaian Koin (<span id="radar-count-badge">0</span>)
                     </h3>
                 </div>
                 <div id="radar-coins-list">
@@ -360,17 +373,14 @@
 
         <!-- TAB 3: LIVE TERMINAL ACTIVITY -->
         <div id="tab-demo-terminal" class="seg-content" style="display: none;">
-            <div class="card" style="background: #0d1117; border-color: #30363d; overflow: hidden; display: flex; flex-direction: column;">
-                <div style="background: #161b22; padding: 10px 14px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="display: inline-block; width: 10px; height: 10px; background: #ff5f56; border-radius: 50%;"></span>
-                        <span style="display: inline-block; width: 10px; height: 10px; background: #ffbd2e; border-radius: 50%;"></span>
-                        <span style="display: inline-block; width: 10px; height: 10px; background: #27c93f; border-radius: 50%;"></span>
-                        <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #8b949e; margin-left: 6px;">TERMINAL LOG (WEBSOCKET + PRE-CLOSE SNIPER)</span>
+            <div class="card" style="background: #0d1017; border-color: var(--border-color); overflow: hidden; display: flex; flex-direction: column;">
+                <div style="background: #141722; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.5px;">
+                        TERMINAL LOG (WEBSOCKET & SNIPER)
                     </div>
-                    <button type="button" id="btn-clear-logs" class="btn btn-secondary" style="font-size: 10px; padding: 2px 8px;">Clear</button>
+                    <button type="button" id="btn-clear-logs" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;">Clear</button>
                 </div>
-                <div id="terminal-log-box" style="padding: 12px; height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #c9d1d9;">
+                <div id="terminal-log-box" style="padding: 12px 14px; height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #c9d1d9;">
                     <div style="color: #8b949e;">[Menunggu aktivitas bot...]</div>
                 </div>
             </div>
@@ -550,15 +560,15 @@
                         let statusInfo = '';
                         if (targetSymbol && currentSr > 0) {
                             statusInfo = `
-                                <div style="margin-top: 12px; font-size: 11px; text-align: left; background: rgba(41, 98, 255, 0.08); border: 1px solid rgba(41, 98, 255, 0.2); border-radius: 6px; padding: 10px;">
-                                    <div style="color: var(--accent-blue); font-weight: 700; margin-bottom: 4px;">📡 Live Kline Monitoring:</div>
+                                <div style="margin-top: 12px; font-size: 11px; text-align: left; background: rgba(10, 132, 255, 0.08); border: 1px solid rgba(10, 132, 255, 0.2); border-radius: 6px; padding: 10px;">
+                                    <div style="color: var(--primary-blue); font-weight: 700; margin-bottom: 4px;">Live Kline Monitoring:</div>
                                     <div>Koin: <strong>${targetSymbol}</strong> | S/R Aktif: <strong>${currentSr}</strong> (Band: ±${currentVol})</div>
                                     <div style="color: var(--text-dim); margin-top: 2px;">Strategi: <strong>${strategy || 'Auto Winner'}</strong></div>
                                 </div>
                             `;
                         }
                         livePosCards.innerHTML = `
-                            <div style="text-align: center; padding: 24px 12px; color: var(--text-dim); background: #151924; border-radius: 10px; border: 1px solid var(--border-color);">
+                            <div style="text-align: center; padding: 24px 12px; color: var(--text-dim); background: #141722; border-radius: 10px; border: 1px solid var(--border-color);">
                                 Belum ada posisi terbuka saat ini.<br>
                                 <small>Bot streaming live kline & menunggu validasi Step S/R Breakout.</small>
                                 ${statusInfo}
@@ -605,7 +615,7 @@
                                 </div>
                                 ${targetsHtml}
                                 <button type="button" class="btn-close-pos btn-close-one" data-sym="${p.symbol}" data-side="${p.side}" data-qty="${p.position_amt}">
-                                    ✕ Tutup Posisi (Market Close)
+                                    Tutup Posisi (Market Close)
                                 </button>
                             `;
                             livePosCards.appendChild(card);
@@ -710,20 +720,20 @@
                 // Streaming status
                 if (scanStreamStatus) {
                     if (data.is_running && data.current_price > 0) {
-                        scanStreamStatus.textContent = '🟢 LIVE WS STREAM';
-                        scanStreamStatus.style.background = 'rgba(8, 153, 129, 0.15)';
+                        scanStreamStatus.textContent = 'LIVE STREAM';
+                        scanStreamStatus.style.background = 'rgba(48, 209, 88, 0.15)';
                         scanStreamStatus.style.color = 'var(--good-green)';
-                        scanStreamStatus.style.borderColor = 'var(--good-green)';
+                        scanStreamStatus.style.borderColor = 'rgba(48, 209, 88, 0.3)';
                     } else if (data.is_running) {
-                        scanStreamStatus.textContent = '🟡 WARMING UP';
-                        scanStreamStatus.style.background = 'rgba(255, 183, 77, 0.15)';
+                        scanStreamStatus.textContent = 'WARM UP';
+                        scanStreamStatus.style.background = 'rgba(255, 159, 10, 0.15)';
                         scanStreamStatus.style.color = 'var(--highlight-gold)';
-                        scanStreamStatus.style.borderColor = 'var(--highlight-gold)';
+                        scanStreamStatus.style.borderColor = 'rgba(255, 159, 10, 0.3)';
                     } else {
-                        scanStreamStatus.textContent = '⚪ STANDBY';
-                        scanStreamStatus.style.background = 'rgba(120, 123, 134, 0.15)';
+                        scanStreamStatus.textContent = 'STANDBY';
+                        scanStreamStatus.style.background = 'rgba(142, 142, 147, 0.15)';
                         scanStreamStatus.style.color = 'var(--text-dim)';
-                        scanStreamStatus.style.borderColor = 'var(--border-color)';
+                        scanStreamStatus.style.borderColor = 'rgba(142, 142, 147, 0.25)';
                     }
                 }
 
@@ -773,13 +783,13 @@
                         scanSpotlightStatus.style.color = (data.active_trade.side === 'BUY') ? 'var(--good-green)' : 'var(--bad-red)';
                     } else if (curPx > 0 && curSr > 0 && curVol > 0) {
                         if (curPx > curSr + curVol) {
-                            scanSpotlightStatus.textContent = '⚡ BREAKOUT UP TERDETEKSI (Siap Entry BUY)';
+                            scanSpotlightStatus.textContent = 'Breakout BUY Terdeteksi (Siap Entry)';
                             scanSpotlightStatus.style.color = 'var(--good-green)';
                         } else if (curPx < curSr - curVol) {
-                            scanSpotlightStatus.textContent = '⚡ BREAKOUT DOWN TERDETEKSI (Siap Entry SELL)';
+                            scanSpotlightStatus.textContent = 'Breakout SELL Terdeteksi (Siap Entry)';
                             scanSpotlightStatus.style.color = 'var(--bad-red)';
                         } else {
-                            scanSpotlightStatus.textContent = '⏳ Dalam Rentang Volatilitas (Menunggu Next SR)';
+                            scanSpotlightStatus.textContent = 'Dalam Rentang Volatilitas (Menunggu Next SR)';
                             scanSpotlightStatus.style.color = 'var(--highlight-gold)';
                         }
                     } else {
@@ -808,7 +818,7 @@
                             const chgColor = (c.change_24h >= 0) ? 'var(--good-green)' : 'var(--bad-red)';
                             const chgSign = (c.change_24h >= 0) ? '+' : '';
                             const activeBadge = c.is_active
-                                ? '<span class="badge badge-online" style="font-size: 10px; padding: 1px 6px;">🎯 TARGET AKTIF</span>'
+                                ? '<span class="badge badge-online" style="font-size: 10px; padding: 1px 6px;">TARGET AKTIF</span>'
                                 : '<span class="badge badge-idle" style="font-size: 10px; padding: 1px 6px;">RADAR</span>';
 
                             card.innerHTML = `
