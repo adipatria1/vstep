@@ -1467,3 +1467,190 @@ select:focus {
     }
 }
 
+/* ========================================================
+   Real-Time Scanner Spotlight & Radar Styles
+   ======================================================== */
+.scanner-hero-card {
+    background: #151924;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+}
+
+.scanner-hero-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary-blue), #00d2ff);
+}
+
+.scanner-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.scanner-sym-title {
+    font-size: 18px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: var(--text-white);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.scanner-status-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.scanner-price-box {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 16px 12px;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.scanner-price-lbl {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.scanner-price-num {
+    font-size: 32px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: #ffffff;
+    line-height: 1.1;
+    transition: color 0.3s ease;
+}
+
+.scanner-price-num.price-flash-up {
+    color: var(--good-green) !important;
+}
+
+.scanner-price-num.price-flash-down {
+    color: var(--bad-red) !important;
+}
+
+.scanner-dist-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+}
+
+.scanner-dist-up {
+    background: rgba(8, 153, 129, 0.15);
+    color: var(--good-green);
+    border: 1px solid rgba(8, 153, 129, 0.3);
+}
+
+.scanner-dist-down {
+    background: rgba(242, 54, 69, 0.15);
+    color: var(--bad-red);
+    border: 1px solid rgba(242, 54, 69, 0.3);
+}
+
+.scanner-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.scanner-metric-item {
+    background: #10141e;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.scanner-metric-lbl {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.scanner-metric-val {
+    font-size: 13px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: var(--text-white);
+}
+
+.scanner-status-strip {
+    background: rgba(41, 98, 255, 0.08);
+    border: 1px solid rgba(41, 98, 255, 0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Radar List Cards */
+.radar-card {
+    background: #151924;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    transition: border-color 0.2s;
+    margin-bottom: 8px;
+}
+
+.radar-card.radar-active-target {
+    border-color: var(--primary-blue);
+    background: rgba(41, 98, 255, 0.06);
+}
+
+.radar-sym {
+    font-size: 14px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.radar-px {
+    font-size: 14px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    color: #ffffff;
+    text-align: right;
+}
+
+

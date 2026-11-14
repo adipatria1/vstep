@@ -243,12 +243,49 @@ pub fn fetch_top_screened_coins(limit: usize, sort_by: &str) -> Result<Vec<CoinT
 
     if sort_by == "top_gainers" {
         tickers.sort_by(|a, b| b.price_change_percent.partial_cmp(&a.price_change_percent).unwrap_or(std::cmp::Ordering::Equal));
+    } else if sort_by == "top_losers" {
+        tickers.sort_by(|a, b| a.price_change_percent.partial_cmp(&b.price_change_percent).unwrap_or(std::cmp::Ordering::Equal));
     } else {
         // top_volume
         tickers.sort_by(|a, b| b.quote_volume.partial_cmp(&a.quote_volume).unwrap_or(std::cmp::Ordering::Equal));
     }
 
     tickers.truncate(limit);
+    Ok(tickers)
+}
+
+/// Mengambil ticker 24hr untuk daftar symbol manual
+pub fn fetch_specific_symbols_tickers(symbols: &[String]) -> Result<Vec<CoinTickerInfo>, String> {
+    if symbols.is_empty() {
+        return Ok(Vec::new());
+    }
+    let url = format!("{}/fapi/v1/ticker/24hr", REAL_BASE_URL);
+
+    let res = ureq::get(&url)
+        .timeout(std::time::Duration::from_secs(8))
+        .call()
+        .map_err(|e| format!("Gagal menghubungi ticker 24hr Binance: {}", e))?;
+
+    let arr: Vec<serde_json::Value> = res.into_json().map_err(|e| format!("Format JSON ticker error: {}", e))?;
+    let sym_set: std::collections::HashSet<String> = symbols.iter().map(|s| s.trim().to_uppercase()).collect();
+    let mut tickers: Vec<CoinTickerInfo> = Vec::new();
+
+    for item in arr {
+        let sym = item["symbol"].as_str().unwrap_or("");
+        if sym_set.contains(sym) {
+            let last_px: f64 = item["lastPrice"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let chg_pct: f64 = item["priceChangePercent"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let vol: f64 = item["quoteVolume"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+
+            tickers.push(CoinTickerInfo {
+                symbol: sym.to_string(),
+                last_price: last_px,
+                price_change_percent: (chg_pct * 100.0).round() / 100.0,
+                quote_volume: (vol / 1_000_000.0 * 10.0).round() / 10.0,
+            });
+        }
+    }
+
     Ok(tickers)
 }
 

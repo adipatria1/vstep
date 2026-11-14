@@ -6,13 +6,43 @@ use std::time::Duration;
 use tungstenite::connect;
 
 use crate::binance_api::{
-    fetch_top_screened_coins, get_live_positions, get_max_leverage, market_close_position,
+    fetch_specific_symbols_tickers, fetch_top_screened_coins, get_live_positions, get_max_leverage, market_close_position,
     market_open_position, panic_close_all_positions, set_symbol_leverage, test_testnet_account,
     AccountBalanceInfo, LivePositionInfo,
 };
 use crate::credentials::load_credentials;
 use crate::engine::{calculate_step_sr, calculate_volatility, create_sim_suite, median, run_backtest};
 use crate::fetcher::fetch_binance_fapi_klines_by_count;
+
+pub fn format_price_clean(val: f64) -> String {
+    if val >= 1000.0 {
+        format!("{:.2}", val)
+    } else if val >= 1.0 {
+        format!("{:.4}", val)
+    } else if val > 0.0 {
+        format!("{:.6}", val)
+    } else {
+        "0.00".to_string()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ScannedCoinState {
+    pub symbol: String,
+    pub price: f64,
+    pub price_str: String,
+    pub change_24h: f64,
+    pub volume_24h: f64,
+    pub is_active: bool,
+    pub current_sr: f64,
+    pub current_sr_str: String,
+    pub breakout_buy: f64,
+    pub breakout_buy_str: String,
+    pub breakout_sell: f64,
+    pub breakout_sell_str: String,
+    pub dist_pct: f64,
+    pub status: String,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -285,6 +315,8 @@ pub struct BotState {
     pub last_warmup_symbol: String,
     pub last_selected_strategy: String,
     pub active_sim: Option<ActiveSimConfig>,
+    pub current_price: f64,
+    pub current_price_str: String,
     pub current_sr: f64,
     pub current_vol: f64,
     pub med_h: f64,
@@ -293,6 +325,7 @@ pub struct BotState {
     pub last_evaluated_bar: i64,
     pub position_bars_held: i32,
     pub active_trade: Option<ActiveTradeState>,
+    pub scanned_coins: Vec<ScannedCoinState>,
 }
 
 impl BotState {
@@ -312,6 +345,8 @@ impl BotState {
             last_warmup_symbol: String::new(),
             last_selected_strategy: String::new(),
             active_sim: None,
+            current_price: 0.0,
+            current_price_str: "-".to_string(),
             current_sr: 0.0,
             current_vol: 0.0,
             med_h: 1.0,
@@ -320,6 +355,7 @@ impl BotState {
             last_evaluated_bar: 0,
             position_bars_held: 0,
             active_trade: None,
+            scanned_coins: Vec::new(),
         }
     }
 
@@ -480,46 +516,112 @@ impl SharedBotState {
                     }
                 }
 
-                if !is_running {
-                    continue;
-                }
-
-                // 1. Tentukan target symbol dari Screener atau Manual
-                let target_symbol = match cfg.coin_mode.as_str() {
-                    "top_gainers" => {
-                        match fetch_top_screened_coins(cfg.max_active_slots, "top_gainers") {
+                // 1. Tentukan target symbol & koin yang di-scan dari Screener atau Manual
+                let (raw_tickers, target_symbol) = match cfg.coin_mode.as_str() {
+                    "top_gainers" | "top_losers" | "top_volume" => {
+                        match fetch_top_screened_coins(cfg.max_active_slots, &cfg.coin_mode) {
                             Ok(coins) => {
-                                if tick_counter % 10 == 0 {
+                                if is_running && tick_counter % 10 == 0 {
                                     let names: Vec<String> = coins.iter().map(|c| format!("{}({:+0.1}%)", c.symbol, c.price_change_percent)).collect();
                                     let mut lock = state_arc.lock().unwrap();
-                                    lock.add_log("info", &format!("🔍 [SCREENER TOP GAINERS 24H]: {}", names.join(", ")));
+                                    lock.add_log("info", &format!("🔍 [SCREENER {} 24H]: {}", cfg.coin_mode.to_uppercase(), names.join(", ")));
                                 }
-                                coins.first().map(|c| c.symbol.clone()).unwrap_or(cfg.manual_symbol.clone())
+                                let first_sym = coins.first().map(|c| c.symbol.clone()).unwrap_or_else(|| cfg.manual_symbol.clone());
+                                (coins, first_sym)
                             }
-                            Err(_) => cfg.manual_symbol.clone(),
-                        }
-                    }
-                    "top_volume" => {
-                        match fetch_top_screened_coins(cfg.max_active_slots, "top_volume") {
-                            Ok(coins) => {
-                                if tick_counter % 10 == 0 {
-                                    let names: Vec<String> = coins.iter().map(|c| format!("{}({}M)", c.symbol, c.quote_volume)).collect();
-                                    let mut lock = state_arc.lock().unwrap();
-                                    lock.add_log("info", &format!("📊 [SCREENER TOP VOLUME 24H]: {}", names.join(", ")));
-                                }
-                                coins.first().map(|c| c.symbol.clone()).unwrap_or(cfg.manual_symbol.clone())
-                            }
-                            Err(_) => cfg.manual_symbol.clone(),
+                            Err(_) => (Vec::new(), cfg.manual_symbol.clone()),
                         }
                     }
                     _ => {
-                        if !cfg.manual_symbol.is_empty() {
-                            cfg.manual_symbol.clone()
+                        let syms = if !cfg.manual_symbols.is_empty() {
+                            cfg.manual_symbols.clone()
+                        } else if !cfg.manual_symbol.is_empty() {
+                            vec![cfg.manual_symbol.clone()]
                         } else {
-                            cfg.manual_symbols.first().cloned().unwrap_or_else(|| "BTCUSDT".to_string())
-                        }
+                            vec!["BTCUSDT".to_string()]
+                        };
+                        let tickers = fetch_specific_symbols_tickers(&syms).unwrap_or_default();
+                        let first_sym = syms.first().cloned().unwrap_or_else(|| "BTCUSDT".to_string());
+                        (tickers, first_sym)
                     }
                 };
+
+                // Perbarui daftar scanned_coins di state untuk UI Live Scanner
+                {
+                    let mut lock = state_arc.lock().unwrap();
+                    let cur_sr = lock.current_sr;
+                    let cur_vol = lock.current_vol;
+                    let active_px = lock.current_price;
+                    let active_px_str = lock.current_price_str.clone();
+                    let has_active_trade = lock.active_trade.as_ref().map(|t| (t.symbol.clone(), t.side.clone()));
+
+                    let mut scanned: Vec<ScannedCoinState> = Vec::new();
+                    for t in &raw_tickers {
+                        let is_active = t.symbol == target_symbol;
+                        let px = if is_active && active_px > 0.0 { active_px } else { t.last_price };
+                        let px_str = if is_active && !active_px_str.is_empty() && active_px_str != "-" {
+                            active_px_str.clone()
+                        } else {
+                            format_price_clean(px)
+                        };
+
+                        let (sr_val, sr_str, buy_val, buy_str, sell_val, sell_str, dist_pct, status) = if is_active && cur_sr > 0.0 {
+                            let upper = cur_sr + cur_vol;
+                            let lower = (cur_sr - cur_vol).max(0.0);
+                            let dist = ((px - cur_sr) / cur_sr) * 100.0;
+                            let stat = if let Some((ref tr_sym, ref tr_side)) = has_active_trade {
+                                if tr_sym == &t.symbol {
+                                    format!("DALAM POSISI ({})", tr_side)
+                                } else {
+                                    "DALAM RADAR".to_string()
+                                }
+                            } else if cur_vol > 0.0 && px > upper {
+                                "BREAKOUT UP (POTENSI BUY)".to_string()
+                            } else if cur_vol > 0.0 && px < lower {
+                                "BREAKOUT DOWN (POTENSI SELL)".to_string()
+                            } else {
+                                "MENUNGGU BREAKOUT S/R".to_string()
+                            };
+
+                            (
+                                cur_sr,
+                                format_price_clean(cur_sr),
+                                upper,
+                                format_price_clean(upper),
+                                lower,
+                                format_price_clean(lower),
+                                dist,
+                                stat
+                            )
+                        } else if is_active {
+                            (0.0, "-".into(), 0.0, "-".into(), 0.0, "-".into(), 0.0, "MEMPERSIAPKAN WARM-UP".into())
+                        } else {
+                            (0.0, "-".into(), 0.0, "-".into(), 0.0, "-".into(), 0.0, "ANTRIAN RADAR".into())
+                        };
+
+                        scanned.push(ScannedCoinState {
+                            symbol: t.symbol.clone(),
+                            price: px,
+                            price_str: px_str,
+                            change_24h: t.price_change_percent,
+                            volume_24h: t.quote_volume,
+                            is_active,
+                            current_sr: sr_val,
+                            current_sr_str: sr_str,
+                            breakout_buy: buy_val,
+                            breakout_buy_str: buy_str,
+                            breakout_sell: sell_val,
+                            breakout_sell_str: sell_str,
+                            dist_pct,
+                            status,
+                        });
+                    }
+                    lock.scanned_coins = scanned;
+                }
+
+                if !is_running {
+                    continue;
+                }
 
                 // 2. Warm-up check untuk target_symbol
                 let needs_warmup = {
@@ -764,6 +866,34 @@ impl SharedBotState {
                                     continue;
                                 }
 
+                                let c_px_raw_str = k["c"].as_str().unwrap_or("").to_string();
+                                {
+                                    let mut lock = state_arc.lock().unwrap();
+                                    lock.current_price = c_px;
+                                    if !c_px_raw_str.is_empty() {
+                                        lock.current_price_str = c_px_raw_str.clone();
+                                    }
+                                    let active_trade_side = lock.active_trade.as_ref().map(|t| t.side.clone());
+                                    if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == symbol) {
+                                        target.price = c_px;
+                                        if !c_px_raw_str.is_empty() {
+                                            target.price_str = c_px_raw_str.clone();
+                                        }
+                                        if target.current_sr > 0.0 {
+                                            target.dist_pct = ((c_px - target.current_sr) / target.current_sr) * 100.0;
+                                            if let Some(ref side) = active_trade_side {
+                                                target.status = format!("POSISI TERBUKA ({})", side);
+                                            } else if target.breakout_buy > 0.0 && c_px > target.breakout_buy {
+                                                target.status = "BREAKOUT UP (POTENSI BUY)".to_string();
+                                            } else if target.breakout_sell > 0.0 && c_px < target.breakout_sell {
+                                                target.status = "BREAKOUT DOWN (POTENSI SELL)".to_string();
+                                            } else {
+                                                target.status = "MENUNGGU BREAKOUT S/R".to_string();
+                                            }
+                                        }
+                                    }
+                                }
+
                                 let creds = load_credentials();
 
                                 // ========================================================
@@ -987,6 +1117,14 @@ impl SharedBotState {
                                             let mut lock = state_arc.lock().unwrap();
                                             let old_sr = lock.current_sr;
                                             lock.current_sr = new_sr;
+                                            if let Some(target) = lock.scanned_coins.iter_mut().find(|c| c.symbol == symbol) {
+                                                target.current_sr = new_sr;
+                                                target.current_sr_str = format_price_clean(new_sr);
+                                                target.breakout_buy = new_sr + cur_vol;
+                                                target.breakout_buy_str = format_price_clean(target.breakout_buy);
+                                                target.breakout_sell = (new_sr - cur_vol).max(0.0);
+                                                target.breakout_sell_str = format_price_clean(target.breakout_sell);
+                                            }
                                             lock.add_log("info", &format!("📈 [S/R STEP BREAKOUT] {} Level S/R bergeser: {:.4} ➔ {:.4} (Band: {:.4})", symbol, old_sr, new_sr, cur_vol));
                                         }
 

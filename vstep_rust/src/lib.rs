@@ -368,8 +368,13 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
                 "positions": lock.cached_positions,
                 "logs": lock.logs,
                 "active_trade": lock.active_trade,
+                "current_price": lock.current_price,
+                "current_price_str": lock.current_price_str,
                 "current_sr": lock.current_sr,
                 "current_vol": lock.current_vol,
+                "breakout_buy": if lock.current_sr > 0.0 && lock.current_vol > 0.0 { lock.current_sr + lock.current_vol } else { 0.0 },
+                "breakout_sell": if lock.current_sr > 0.0 && lock.current_vol > 0.0 { (lock.current_sr - lock.current_vol).max(0.0) } else { 0.0 },
+                "scanned_coins": lock.scanned_coins,
                 "strategy": lock.last_selected_strategy,
                 "warmup_symbol": lock.last_warmup_symbol,
             });

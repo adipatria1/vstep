@@ -59,6 +59,9 @@
             <button type="button" class="seg-tab active" data-tab="tab-demo-positions">
                 💼 Posisi Aktif (<span id="pos-count-badge">0</span>)
             </button>
+            <button type="button" class="seg-tab" data-tab="tab-demo-scanner">
+                📡 Live Scanner (<span id="scanner-coin-badge">-</span>)
+            </button>
             <button type="button" class="seg-tab" data-tab="tab-demo-config">
                 ⚙️ Aturan & Parameter
             </button>
@@ -100,6 +103,78 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: LIVE SCANNER & HARGA REAL-TIME -->
+        <div id="tab-demo-scanner" class="seg-content" style="display: none;">
+            <!-- Hero Spotlight Card: Koin yang Sedang Dipantau untuk Entry -->
+            <div class="scanner-hero-card">
+                <div class="scanner-head">
+                    <div class="scanner-sym-title">
+                        <span id="scan-spotlight-symbol">BTCUSDT</span>
+                        <span id="scan-spotlight-tf" class="badge badge-idle" style="font-size: 11px;">15m</span>
+                    </div>
+                    <div>
+                        <span id="scan-stream-status" class="scanner-status-tag" style="background: rgba(120, 123, 134, 0.15); color: var(--text-dim); border: 1px solid var(--border-color);">STANDBY</span>
+                    </div>
+                </div>
+
+                <!-- Live Price Box -->
+                <div class="scanner-price-box">
+                    <div class="scanner-price-lbl">HARGA TERKINI (REAL-TIME STREAM)</div>
+                    <div id="scan-spotlight-price" class="scanner-price-num">-</div>
+                    <div>
+                        <span id="scan-spotlight-dist" class="scanner-dist-badge scanner-dist-up">Menunggu streaming data...</span>
+                    </div>
+                </div>
+
+                <!-- Essential Metrics Grid -->
+                <div class="scanner-grid">
+                    <div class="scanner-metric-item">
+                        <span class="scanner-metric-lbl">Level S/R Aktif</span>
+                        <span id="scan-spotlight-sr" class="scanner-metric-val">-</span>
+                    </div>
+                    <div class="scanner-metric-item" style="border-left: 3px solid var(--good-green);">
+                        <span class="scanner-metric-lbl" style="color: var(--good-green);">Breakout BUY (Up)</span>
+                        <span id="scan-spotlight-buy" class="scanner-metric-val" style="color: var(--good-green);">-</span>
+                    </div>
+                    <div class="scanner-metric-item" style="border-left: 3px solid var(--bad-red);">
+                        <span class="scanner-metric-lbl" style="color: var(--bad-red);">Breakout SELL (Down)</span>
+                        <span id="scan-spotlight-sell" class="scanner-metric-val" style="color: var(--bad-red);">-</span>
+                    </div>
+                    <div class="scanner-metric-item">
+                        <span class="scanner-metric-lbl">Volatilitas (Band ±)</span>
+                        <span id="scan-spotlight-vol" class="scanner-metric-val">-</span>
+                    </div>
+                </div>
+
+                <!-- Signal Status Strip -->
+                <div class="scanner-status-strip">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+                        <span style="color: var(--text-dim); font-weight: 700;">Status Entry:</span>
+                        <span id="scan-spotlight-status" style="font-weight: 800; color: var(--highlight-gold);">Menunggu Sinyal Next SR</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; flex-wrap: wrap; gap: 4px;">
+                        <span style="color: var(--text-dim);">Strategi Aktif:</span>
+                        <strong id="scan-spotlight-strategy" style="color: var(--text-white);">-</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Radar / Scanned Coins List (untuk Screener & Multi-Coin) -->
+            <div class="card" style="padding: 14px; background: #11141d; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 12px;">
+                <div class="section-header" style="margin-bottom: 10px;">
+                    <h3 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-white);">
+                        🎯 Radar Koin Pemindaian (<span id="radar-count-badge">0</span>)
+                    </h3>
+                </div>
+                <div id="radar-coins-list">
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim); font-size: 12px;">
+                        Belum ada koin di radar pemindaian.<br>
+                        <small>Pilih mode Auto-Screener atau isi Simbol Manual di tab Aturan & Parameter.</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -456,7 +531,10 @@
                         // 3. Live Positions
                         renderPositions(data.positions || [], data.active_trade, data.current_sr, data.current_vol, data.strategy, data.warmup_symbol);
 
-                        // 4. Terminal Logs
+                        // 4. Live Scanner & Realtime Prices
+                        renderScanner(data);
+
+                        // 5. Terminal Logs
                         renderLogs(data.logs || []);
                     })
                     .catch(err => console.error('Poll error:', err));
@@ -589,6 +667,169 @@
                         }
                     });
                 });
+            }
+
+            // Live Scanner Renderer
+            let prevLivePrice = 0;
+            const scanSpotlightSymbol = document.getElementById('scan-spotlight-symbol');
+            const scanSpotlightTf = document.getElementById('scan-spotlight-tf');
+            const scanStreamStatus = document.getElementById('scan-stream-status');
+            const scanSpotlightPrice = document.getElementById('scan-spotlight-price');
+            const scanSpotlightDist = document.getElementById('scan-spotlight-dist');
+            const scanSpotlightSr = document.getElementById('scan-spotlight-sr');
+            const scanSpotlightBuy = document.getElementById('scan-spotlight-buy');
+            const scanSpotlightSell = document.getElementById('scan-spotlight-sell');
+            const scanSpotlightVol = document.getElementById('scan-spotlight-vol');
+            const scanSpotlightStatus = document.getElementById('scan-spotlight-status');
+            const scanSpotlightStrategy = document.getElementById('scan-spotlight-strategy');
+            const scannerCoinBadge = document.getElementById('scanner-coin-badge');
+            const radarCountBadge = document.getElementById('radar-count-badge');
+            const radarCoinsList = document.getElementById('radar-coins-list');
+
+            function renderScanner(data) {
+                const targetSym = data.warmup_symbol || (data.config && data.config.manual_symbol) || 'BTCUSDT';
+                const tf = (data.config && data.config.interval) || '15m';
+
+                if (scannerCoinBadge) {
+                    scannerCoinBadge.textContent = data.is_running ? targetSym : 'OFF';
+                }
+                if (scanSpotlightSymbol) {
+                    scanSpotlightSymbol.textContent = targetSym;
+                }
+                if (scanSpotlightTf) {
+                    scanSpotlightTf.textContent = tf;
+                }
+
+                // Streaming status
+                if (scanStreamStatus) {
+                    if (data.is_running && data.current_price > 0) {
+                        scanStreamStatus.textContent = '🟢 LIVE WS STREAM';
+                        scanStreamStatus.style.background = 'rgba(8, 153, 129, 0.15)';
+                        scanStreamStatus.style.color = 'var(--good-green)';
+                        scanStreamStatus.style.borderColor = 'var(--good-green)';
+                    } else if (data.is_running) {
+                        scanStreamStatus.textContent = '🟡 WARMING UP';
+                        scanStreamStatus.style.background = 'rgba(255, 183, 77, 0.15)';
+                        scanStreamStatus.style.color = 'var(--highlight-gold)';
+                        scanStreamStatus.style.borderColor = 'var(--highlight-gold)';
+                    } else {
+                        scanStreamStatus.textContent = '⚪ STANDBY';
+                        scanStreamStatus.style.background = 'rgba(120, 123, 134, 0.15)';
+                        scanStreamStatus.style.color = 'var(--text-dim)';
+                        scanStreamStatus.style.borderColor = 'var(--border-color)';
+                    }
+                }
+
+                // Live Price with flash effect
+                const curPx = data.current_price || 0;
+                const pxStr = (data.current_price_str && data.current_price_str !== '-') ? data.current_price_str : (curPx > 0 ? curPx.toString() : '-');
+                if (scanSpotlightPrice) {
+                    scanSpotlightPrice.textContent = pxStr;
+                    if (prevLivePrice > 0 && curPx > 0) {
+                        if (curPx > prevLivePrice) {
+                            scanSpotlightPrice.classList.add('price-flash-up');
+                            setTimeout(() => scanSpotlightPrice.classList.remove('price-flash-up'), 400);
+                        } else if (curPx < prevLivePrice) {
+                            scanSpotlightPrice.classList.add('price-flash-down');
+                            setTimeout(() => scanSpotlightPrice.classList.remove('price-flash-down'), 400);
+                        }
+                    }
+                    if (curPx > 0) prevLivePrice = curPx;
+                }
+
+                // Distance from S/R
+                const curSr = data.current_sr || 0;
+                const curVol = data.current_vol || 0;
+                if (scanSpotlightDist) {
+                    if (curPx > 0 && curSr > 0) {
+                        const distPct = ((curPx - curSr) / curSr) * 100.0;
+                        const isUp = distPct >= 0;
+                        scanSpotlightDist.textContent = `${isUp ? '+' : ''}${distPct.toFixed(2)}% dari S/R Aktif`;
+                        scanSpotlightDist.className = `scanner-dist-badge ${isUp ? 'scanner-dist-up' : 'scanner-dist-down'}`;
+                    } else {
+                        scanSpotlightDist.textContent = 'Menunggu data kalkulasi S/R...';
+                        scanSpotlightDist.className = 'scanner-dist-badge';
+                    }
+                }
+
+                // Metrics
+                if (scanSpotlightSr) scanSpotlightSr.textContent = curSr > 0 ? curSr : '-';
+                if (scanSpotlightBuy) scanSpotlightBuy.textContent = data.breakout_buy > 0 ? `> ${data.breakout_buy}` : '-';
+                if (scanSpotlightSell) scanSpotlightSell.textContent = data.breakout_sell > 0 ? `< ${data.breakout_sell}` : '-';
+                if (scanSpotlightVol) scanSpotlightVol.textContent = curVol > 0 ? `±${curVol}` : '-';
+
+                // Status & Strategy
+                if (scanSpotlightStrategy) scanSpotlightStrategy.textContent = data.strategy || 'Auto-Winner Leaderboard';
+                if (scanSpotlightStatus) {
+                    if (data.active_trade) {
+                        scanSpotlightStatus.textContent = `Sedang Membuka Posisi: ${data.active_trade.side} (${data.active_trade.symbol})`;
+                        scanSpotlightStatus.style.color = (data.active_trade.side === 'BUY') ? 'var(--good-green)' : 'var(--bad-red)';
+                    } else if (curPx > 0 && curSr > 0 && curVol > 0) {
+                        if (curPx > curSr + curVol) {
+                            scanSpotlightStatus.textContent = '⚡ BREAKOUT UP TERDETEKSI (Siap Entry BUY)';
+                            scanSpotlightStatus.style.color = 'var(--good-green)';
+                        } else if (curPx < curSr - curVol) {
+                            scanSpotlightStatus.textContent = '⚡ BREAKOUT DOWN TERDETEKSI (Siap Entry SELL)';
+                            scanSpotlightStatus.style.color = 'var(--bad-red)';
+                        } else {
+                            scanSpotlightStatus.textContent = '⏳ Dalam Rentang Volatilitas (Menunggu Next SR)';
+                            scanSpotlightStatus.style.color = 'var(--highlight-gold)';
+                        }
+                    } else {
+                        scanSpotlightStatus.textContent = data.is_running ? 'Memulai Warm-up Klines...' : 'Bot Standby (Belum Berjalan)';
+                        scanSpotlightStatus.style.color = 'var(--text-dim)';
+                    }
+                }
+
+                // Render Radar Coins List
+                const scannedCoins = data.scanned_coins || [];
+                if (radarCountBadge) radarCountBadge.textContent = `${scannedCoins.length}`;
+                if (radarCoinsList) {
+                    if (scannedCoins.length === 0) {
+                        radarCoinsList.innerHTML = `
+                            <div style="text-align: center; padding: 20px; color: var(--text-dim); font-size: 12px;">
+                                Belum ada koin di radar pemindaian.<br>
+                                <small>Pilih mode Auto-Screener atau isi Simbol Manual di tab Aturan & Parameter.</small>
+                            </div>
+                        `;
+                    } else {
+                        radarCoinsList.innerHTML = '';
+                        scannedCoins.forEach(c => {
+                            const card = document.createElement('div');
+                            card.className = `radar-card ${c.is_active ? 'radar-active-target' : ''}`;
+
+                            const chgColor = (c.change_24h >= 0) ? 'var(--good-green)' : 'var(--bad-red)';
+                            const chgSign = (c.change_24h >= 0) ? '+' : '';
+                            const activeBadge = c.is_active
+                                ? '<span class="badge badge-online" style="font-size: 10px; padding: 1px 6px;">🎯 TARGET AKTIF</span>'
+                                : '<span class="badge badge-idle" style="font-size: 10px; padding: 1px 6px;">RADAR</span>';
+
+                            card.innerHTML = `
+                                <div>
+                                    <div class="radar-sym">
+                                        ${c.symbol}
+                                        ${activeBadge}
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
+                                        24h: <span style="color: ${chgColor}; font-weight: 700;">${chgSign}${c.change_24h}%</span>
+                                        • Vol: <strong>${c.volume_24h}M</strong>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--highlight-gold); margin-top: 3px;">
+                                        ${c.status}
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div class="radar-px">${c.price_str || c.price}</div>
+                                    <div style="font-size: 11px; color: var(--text-dim);">
+                                        ${c.current_sr > 0 ? `S/R: <strong>${c.current_sr_str}</strong>` : 'USDT'}
+                                    </div>
+                                    ${c.dist_pct !== 0 ? `<div style="font-size: 10px; color: ${c.dist_pct >= 0 ? 'var(--good-green)' : 'var(--bad-red)'}; font-weight: 700;">${c.dist_pct >= 0 ? '+' : ''}${c.dist_pct.toFixed(2)}% ke S/R</div>` : ''}
+                                </div>
+                            `;
+                            radarCoinsList.appendChild(card);
+                        });
+                    }
+                }
             }
 
             let seenLogsCount = -1;
