@@ -271,8 +271,8 @@
                         <div class="form-group col-6">
                             <label for="volatility_type">Volatility Type</label>
                             <select id="volatility_type" name="volatility_type">
-                                <option value="Stdev" selected>Stdev</option>
-                                <option value="Atr">Atr</option>
+                                <option value="Stdev">Stdev</option>
+                                <option value="Atr" selected>Atr</option>
                             </select>
                         </div>
                     </div>
@@ -781,6 +781,11 @@
                     if (data.active_trade) {
                         scanSpotlightStatus.textContent = `Sedang Membuka Posisi: ${data.active_trade.side} (${data.active_trade.symbol})`;
                         scanSpotlightStatus.style.color = (data.active_trade.side === 'BUY') ? 'var(--good-green)' : 'var(--bad-red)';
+                    } else if (data.next_sr_active) {
+                        const dirIcon = (data.next_sr_dir === 'BULL') ? '▲' : '▼';
+                        const pctStr = (data.next_sr_pct !== null && data.next_sr_pct !== undefined) ? ` (${data.next_sr_pct >= 0 ? '+' : ''}${data.next_sr_pct.toFixed(2)}%)` : '';
+                        scanSpotlightStatus.textContent = `● CANDIDATE NEXT SR ${data.next_sr_dir} ${dirIcon} @ ${data.next_sr_price_str || data.next_sr_price}${pctStr}`;
+                        scanSpotlightStatus.style.color = (data.next_sr_dir === 'BULL') ? 'var(--good-green)' : 'var(--bad-red)';
                     } else if (curPx > 0 && curSr > 0 && curVol > 0) {
                         if (curPx > curSr + curVol) {
                             scanSpotlightStatus.textContent = 'Breakout BUY Terdeteksi (Siap Entry)';

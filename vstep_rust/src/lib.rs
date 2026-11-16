@@ -389,6 +389,15 @@ fn handle_request(mut request: tiny_http::Request, state: AppState) {
                 "scanned_coins": lock.scanned_coins,
                 "strategy": lock.last_selected_strategy,
                 "warmup_symbol": lock.last_warmup_symbol,
+                "next_sr_active": lock.engine.next_sr_active,
+                "next_sr_dir": lock.engine.next_sr_dir,
+                "next_sr_price": lock.engine.next_sr_price,
+                "next_sr_price_str": lock.engine.next_sr_price_str(),
+                "next_sr_pct": lock.engine.next_sr_pct,
+                "cur_dir": lock.engine.cur_dir,
+                "cur_pct": lock.engine.cur_pct,
+                "candle_open_time": lock.engine.candle_open_time,
+                "candle_close_time": lock.engine.candle_close_time,
             });
             let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
             let _ = request.respond(Response::from_string(res.to_string()).with_header(header));
