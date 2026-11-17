@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val appDataDir = filesDir.absolutePath
             val appCacheDir = cacheDir.absolutePath
-            val res = startNativeEngine(5050, appDataDir, appCacheDir)
+            val res = startNativeEngine(5000, appDataDir, appCacheDir)
             Log.i(TAG, "Native Rust engine started with code $res in dir: $appDataDir, cacheDir: $appCacheDir")
         } catch (e: Throwable) {
             Log.w(TAG, "Native engine call skipped/failed: ${e.message}")

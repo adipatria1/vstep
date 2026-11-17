@@ -1,380 +1,1545 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VolStep Strategy Finder - Binance Futures Cross Margin</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VolStep S/R — Binance Futures</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #090a0f;
+      --bg-surface: #12141c;
+      --bg-surface-elevated: #1a1d28;
+      --bg-surface-active: #222634;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(255, 255, 255, 0.14);
+      --border-focus: #0071e3;
+      --text-primary: #f5f5f7;
+      --text-secondary: #86868b;
+      --text-tertiary: #515154;
+      --ios-blue: #2997ff;
+      --ios-blue-dim: rgba(41, 151, 255, 0.12);
+      --ios-green: #30d158;
+      --ios-green-dim: rgba(48, 209, 88, 0.12);
+      --ios-red: #ff453a;
+      --ios-red-dim: rgba(255, 69, 58, 0.12);
+      --ios-amber: #ff9f0a;
+      --ios-amber-dim: rgba(255, 159, 10, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-pill: 9999px;
+      --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+      --font-mono: "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+      --spring: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-system);
+      font-size: 13.5px;
+      line-height: 1.45;
+      padding-bottom: 72px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* TOPBAR / NAVIGATION */
+    .topbar {
+      background: rgba(9, 10, 15, 0.85);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, #1f2430 0%, #12141c 100%);
+      border: 1px solid var(--border-medium);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .brand-mark svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: var(--ios-blue);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .brand-title {
+      font-weight: 600;
+      font-size: 14.5px;
+      letter-spacing: -0.015em;
+      color: var(--text-primary);
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      letter-spacing: -0.005em;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* STATUS BADGE */
+    .status-capsule {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      transition: all 0.2s var(--spring);
+    }
+    .status-dot {
+      width: 6.5px;
+      height: 6.5px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+    }
+    .badge-running .status-dot { background: var(--ios-green); box-shadow: 0 0 8px rgba(48, 209, 88, 0.4); }
+    .badge-running { color: var(--ios-green); border-color: rgba(48, 209, 88, 0.25); background: var(--ios-green-dim); }
+    .badge-warmup .status-dot { background: var(--ios-amber); }
+    .badge-warmup { color: var(--ios-amber); border-color: rgba(255, 159, 10, 0.25); background: var(--ios-amber-dim); }
+    .badge-stopped .status-dot { background: var(--text-secondary); }
+    .badge-stopped { color: var(--text-secondary); }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      font-family: var(--font-system);
+      letter-spacing: -0.005em;
+      transition: transform 0.1s var(--spring), background-color 0.15s ease, border-color 0.15s ease;
+      user-select: none;
+    }
+    .btn:active {
+      transform: scale(0.96);
+    }
+    .btn-primary {
+      background: var(--ios-blue);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #0077ed;
+    }
+    .btn-success {
+      background: var(--ios-green);
+      color: #051b0b;
+      font-weight: 700;
+    }
+    .btn-success:hover {
+      filter: brightness(1.08);
+    }
+    .btn-danger {
+      background: var(--ios-red-dim);
+      color: var(--ios-red);
+      border-color: rgba(255, 69, 58, 0.25);
+    }
+    .btn-danger:hover {
+      background: var(--ios-red);
+      color: #fff;
+    }
+    .btn-outline {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border-color: var(--border-subtle);
+    }
+    .btn-outline:hover {
+      background: var(--bg-surface-active);
+      border-color: var(--border-medium);
+    }
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 11.5px;
+      border-radius: 6px;
+    }
+
+    /* CONTAINER */
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 16px 20px;
+    }
+
+    /* STATS SUMMARY ROW */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      transition: border-color 0.2s ease;
+    }
+    .stat-card:hover {
+      border-color: var(--border-medium);
+    }
+    .stat-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+    .stat-value {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+    }
+    .stat-sub {
+      font-size: 11px;
+      margin-top: 4px;
+      color: var(--text-secondary);
+      letter-spacing: -0.005em;
+    }
+
+    /* SEGMENTED CONTROL TABS */
+    .tabs-wrapper {
+      margin-bottom: 20px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tabs-wrapper::-webkit-scrollbar { display: none; }
+    .segmented-control {
+      display: inline-flex;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      padding: 3px;
+      border-radius: 10px;
+      gap: 2px;
+    }
+    .seg-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 6px 14px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-system);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .seg-btn:hover {
+      color: var(--text-primary);
+    }
+    .seg-btn.active {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+
+    /* CARD COMPONENT */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .card-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+    }
+    .card-caption {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* TABLES */
+    .table-container {
+      overflow-x: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      background: #0d0f16;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 12.5px;
+    }
+    th {
+      background: var(--bg-surface-elevated);
+      color: var(--text-secondary);
+      font-weight: 600;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      white-space: nowrap;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+    /* PILL TAGS */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2.5px 7px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-system);
+      letter-spacing: 0.01em;
+    }
+    .pill-bull {
+      background: var(--ios-green-dim);
+      color: var(--ios-green);
+      border: 1px solid rgba(48, 209, 88, 0.2);
+    }
+    .pill-bear {
+      background: var(--ios-red-dim);
+      color: var(--ios-red);
+      border: 1px solid rgba(255, 69, 58, 0.2);
+    }
+    .pill-neutral {
+      background: var(--bg-surface-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* FORMS */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: -0.01em;
+    }
+    input, select, textarea {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-family: var(--font-system);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--ios-blue);
+      background: var(--bg-surface-active);
+    }
+    .form-help {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      letter-spacing: -0.005em;
+    }
+
+    /* CALLOUT BOX */
+    .callout {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 12.5px;
+    }
+    .callout-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+    .callout-desc {
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* TERMINAL LOGS */
+    .terminal {
+      background: #07080b;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      height: 320px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #94a3b8;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-line {
+      display: flex;
+      gap: 10px;
+      line-height: 1.4;
+    }
+    .log-ts { color: var(--text-tertiary); }
+    .log-info { color: #7dd3fc; }
+    .log-warn { color: #fde047; }
+    .log-error { color: #fca5a5; }
+
+    /* STOP MOTION TAB TRANSITION */
+    .tab-content {
+      animation: tabSlideIn 0.18s var(--spring);
+    }
+    @keyframes tabSlideIn {
+      0% { opacity: 0; transform: translateY(4px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* DYNAMIC ISLAND TOAST NOTIFICATION */
+    #toast-island {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-30px) scale(0.92);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 1000;
+      background: rgba(18, 20, 28, 0.94);
+      backdrop-filter: saturate(180%) blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-pill);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: all 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.25);
+    }
+    #toast-island.show {
+      transform: translateX(-50%) translateY(0) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .toast-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .toast-icon svg { width: 11px; height: 11px; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .toast-success .toast-icon { background: var(--ios-green-dim); color: var(--ios-green); }
+    .toast-error .toast-icon { background: var(--ios-red-dim); color: var(--ios-red); }
+    .toast-info .toast-icon { background: var(--ios-blue-dim); color: var(--ios-blue); }
+    .toast-msg {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+  </style>
 </head>
-<body class="dark-theme">
-    <header class="app-header">
-        <div class="header-brand">
-            <span class="logo-badge">PRO</span>
-            <h1>VolStep Finder <span class="sub-title">Binance Futures (Cross Margin)</span></h1>
-        </div>
-        <div class="header-status">
-            <span id="backend-status" class="badge badge-online">System Ready</span>
-            <span id="data-status" class="badge badge-idle">No Data Loaded</span>
-        </div>
-    </header>
+<body>
 
-    <div class="main-container">
-        <!-- Sidebar Controls -->
-        <aside class="sidebar-panel">
-            <form id="backtest-form">
-                <!-- Section 1: Data & Fetch -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>1. Fetch Binance Futures (FAPI)</h3>
-                    </div>
-                    <div class="form-group">
-                        <label for="symbol">Nama Coin / Pair</label>
-                        <input type="text" id="symbol" name="symbol" value="BTCUSDT" placeholder="Contoh: BTCUSDT, ETHUSDT" required>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="interval">Time Frame</label>
-                            <select id="interval" name="interval">
-                                <option value="1m">1m</option>
-                                <option value="3m">3m</option>
-                                <option value="5m">5m</option>
-                                <option value="15m">15m</option>
-                                <option value="30m">30m</option>
-                                <option value="1h" selected>1h</option>
-                                <option value="2h">2h</option>
-                                <option value="4h">4h</option>
-                                <option value="6h">6h</option>
-                                <option value="8h">8h</option>
-                                <option value="12h">12h</option>
-                                <option value="1d">1d</option>
-                                <option value="3d">3d</option>
-                                <option value="1w">1w</option>
-                                <option value="1M">1M</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="days">Days (Hari Fetch)</label>
-                            <input type="number" id="days" name="days" value="7" min="1" max="2500" required>
-                        </div>
-                    </div>
-                    <div class="form-group checkbox-group">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="force_fetch" name="force_fetch">
-                            <span class="checkmark"></span>
-                            Paksa Fetch Ulang (Abaikan Cache)
-                        </label>
-                        <small class="helper-text" id="cache-indicator">Cek cache disk...</small>
-                    </div>
-                </div>
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      </div>
+      <div>
+        <div class="brand-title">VolStep S/R</div>
+        <div class="brand-sub">Binance Futures Algorithmic Bot</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div id="bot-badge" class="status-capsule badge-stopped">
+        <span class="status-dot"></span>
+        <span id="bot-badge-text">STOPPED</span>
+      </div>
+      <button id="btn-start" class="btn btn-success" onclick="startBot()">Start Bot</button>
+      <button id="btn-stop" class="btn btn-danger" onclick="stopBot()" style="display:none;">Stop Bot</button>
+    </div>
+  </header>
 
-                <!-- Section 2: Volatility & Line (Pine Script) -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>2. Line & Volatility Settings</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="lineMode">Line Mode</label>
-                            <select id="lineMode" name="lineMode">
-                                <option value="Anchor" selected>Anchor</option>
-                                <option value="Without Anchor">Without Anchor</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="volatilityType">Volatility Type</label>
-                            <select id="volatilityType" name="volatilityType">
-                                <option value="Stdev" selected>Stdev</option>
-                                <option value="Atr">Atr</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="volatilityLength">Lookback Period</label>
-                            <input type="number" id="volatilityLength" name="volatilityLength" value="200" min="2">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="volMult">Multiplier</label>
-                            <input type="number" id="volMult" name="volMult" value="4.0" step="0.1" min="0.1">
-                        </div>
-                    </div>
-                </div>
+  <!-- MAIN CONTAINER -->
+  <main class="container">
 
-                <!-- Section 3: Futures Account Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>3. Futures Account Settings</h3>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="initCap">Saldo Awal (USDT)</label>
-                            <input type="number" id="initCap" name="initCap" value="1000.0" step="10" min="1">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="leverage">Leverage (x)</label>
-                            <input type="number" id="leverage" name="leverage" value="10" min="1" max="125">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="marginPct">Margin per Entry (%)</label>
-                            <input type="number" id="marginPct" name="marginPct" value="5.0" step="0.5" min="0.1" max="100">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="marginBasis">Margin Basis</label>
-                            <select id="marginBasis" name="marginBasis">
-                                <option value="Current Balance" selected>Current Balance</option>
-                                <option value="Initial Balance">Initial Balance</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="feeEntry">Fee Taker (%)</label>
-                            <input type="number" id="feeEntry" name="feeEntry" value="0.05" step="0.005" min="0">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="feeExit">Fee Maker (%)</label>
-                            <input type="number" id="feeExit" name="feeExit" value="0.02" step="0.005" min="0">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="mmrPct">MMR (%)</label>
-                            <input type="number" id="mmrPct" name="mmrPct" value="0.4" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="maxOpen">Max Open</label>
-                            <input type="number" id="maxOpen" name="maxOpen" value="20" min="1" max="200">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="btDays">BT Days</label>
-                            <input type="number" id="btDays" name="btDays" value="0" min="0" title="0 = semua data">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section 4: Strategy Finder Settings -->
-                <div class="card form-section">
-                    <div class="section-header">
-                        <h3>4. Strategy Finder Settings</h3>
-                    </div>
-                    <div class="form-group checkbox-row">
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incHedge" name="incHedge" checked>
-                            <span class="checkmark"></span> Hedge
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incTrend" name="incTrend" checked>
-                            <span class="checkmark"></span> Trend
-                        </label>
-                        <label class="custom-checkbox">
-                            <input type="checkbox" id="incCounter" name="incCounter" checked>
-                            <span class="checkmark"></span> Counter
-                        </label>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-4">
-                            <label for="fixed1">Fixed 1 (%)</label>
-                            <input type="number" id="fixed1" name="fixed1" value="0.3" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed2">Fixed 2 (%)</label>
-                            <input type="number" id="fixed2" name="fixed2" value="0.6" step="0.05" min="0.01">
-                        </div>
-                        <div class="form-group col-4">
-                            <label for="fixed3">Fixed 3 (%)</label>
-                            <input type="number" id="fixed3" name="fixed3" value="1.0" step="0.05" min="0.01">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="minLevels">Min SR Selesai</label>
-                            <input type="number" id="minLevels" name="minLevels" value="10" min="1">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="rankBy">Ranking Berdasarkan</label>
-                            <select id="rankBy" name="rankBy">
-                                <option value="Net / Max DD" selected>Net / Max DD</option>
-                                <option value="Net Profit %">Net Profit %</option>
-                                <option value="Profit Factor">Profit Factor</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group col-6">
-                            <label for="topN">Top N (Leaderboard)</label>
-                            <input type="number" id="topN" name="topN" value="12" min="3" max="39">
-                        </div>
-                        <div class="form-group col-6">
-                            <label for="tableMode">Tampilkan Tabel</label>
-                            <select id="tableMode" name="tableMode">
-                                <option value="Keduanya (Top + Detail)" selected>Keduanya (Top + Detail)</option>
-                                <option value="Top Strategy (Leaderboard Saja)">Leaderboard Saja</option>
-                                <option value="Detail Strategy (Detail Saja)">Detail Saja</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="selStrategy">Pilih Strategi (Visual & Detail)</label>
-                        <select id="selStrategy" name="selStrategy">
-                            <option value="Top #1 (Otomatis Peringkat 1)" selected>Top #1 (Otomatis Peringkat 1)</option>
-                            <option value="None">None</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Submit Buttons -->
-                <div class="button-actions">
-                    <button type="button" id="btn-run" class="btn btn-primary">
-                        <span class="btn-icon">⚡</span> Fetch & Jalankan Simulasi
-                    </button>
-                    <button type="button" id="btn-recalc" class="btn btn-secondary" title="Jalankan ulang simulasi menggunakan data yang sudah ada di RAM/cache tanpa request ulang Binance">
-                        <span class="btn-icon">🔄</span> Hitung Ulang Cepat (RAM)
-                    </button>
-                </div>
-            </form>
-        </aside>
-
-        <!-- Main Display / Tables -->
-        <main class="content-panel">
-            <!-- Progress & Notifications -->
-            <div id="progress-container" class="card progress-card" style="display: none;">
-                <div class="progress-info">
-                    <span id="progress-label" class="progress-label">Menghubungkan ke Binance FAPI...</span>
-                    <span id="progress-percent" class="progress-percent">0%</span>
-                </div>
-                <div class="progress-track">
-                    <div id="progress-bar" class="progress-fill" style="width: 0%;"></div>
-                </div>
-                <div id="milestone-alert" class="milestone-box" style="display: none;">
-                    <span class="pulse-icon">⏳</span>
-                    <span id="milestone-text">Batas kelipatan 360 hari tercapai. Jeda 1 menit sesuai aturan (tersisa 60s)...</span>
-                </div>
-            </div>
-
-            <!-- Summary Bar -->
-            <div id="summary-bar" class="card summary-bar" style="display: none;">
-                <div class="summary-item">
-                    <span class="lbl">Coin / Pair</span>
-                    <span class="val" id="sum-coin">-</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Candles / Periode</span>
-                    <span class="val" id="sum-candles">-</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Harga Terakhir</span>
-                    <span class="val" id="sum-price">-</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">Total Strategi</span>
-                    <span class="val" id="sum-strats">-</span>
-                </div>
-            </div>
-
-            <!-- Tables Grid -->
-            <div class="tables-grid">
-                <!-- Leaderboard Table -->
-                <div id="leaderboard-container" class="card table-card">
-                    <div class="table-header-bar blue-header">
-                        <h2 id="ld-title">STRATEGY FINDER | CROSS | 39 strategi | rank: Net / Max DD</h2>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="pine-table leaderboard-table" id="table-leaderboard">
-                            <thead>
-                                <tr>
-                                    <th class="text-center" style="width: 40px;">#</th>
-                                    <th class="text-left">Strategi</th>
-                                    <th class="text-right">Net %</th>
-                                    <th class="text-right">DD Eq %</th>
-                                    <th class="text-right">DD Bal %</th>
-                                    <th class="text-right">Win %</th>
-                                    <th class="text-right">Trade</th>
-                                    <th class="text-right">PF</th>
-                                    <th class="text-center">Liq</th>
-                                </tr>
-                            </thead>
-                            <tbody id="ld-body">
-                                <tr>
-                                    <td colspan="9" class="text-center empty-cell">Silakan klik "Fetch & Jalankan Simulasi" untuk memulai</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Detail Table -->
-                <div id="detail-container" class="card table-card">
-                    <div class="table-header-bar blue-header">
-                        <h2 id="dt-title">DETAIL STRATEGY</h2>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="pine-table detail-table" id="table-detail">
-                            <tbody id="dt-body">
-                                <tr>
-                                    <td colspan="2" class="text-center empty-cell">Data detail belum tersedia</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Auxiliary Insights: Recent Trades & Active Positions -->
-            <div class="card aux-card" id="aux-container" style="display: none;">
-                <div class="aux-tabs">
-                    <button class="tab-btn active" data-tab="trades-tab">Riwayat Trade Terakhir (Closed Trades)</button>
-                    <button class="tab-btn" data-tab="positions-tab">Posisi Terbuka Saat Ini (Open Positions)</button>
-                </div>
-                <div class="tab-content active" id="trades-tab">
-                    <div class="table-responsive">
-                        <table class="pine-table aux-table">
-                            <thead>
-                                <tr>
-                                    <th>Side</th>
-                                    <th>Entry Time</th>
-                                    <th>Entry Px</th>
-                                    <th>TP Px</th>
-                                    <th>SL Px</th>
-                                    <th>Exit Time</th>
-                                    <th>Exit Px</th>
-                                    <th>Alasan Exit</th>
-                                    <th>Move %</th>
-                                    <th>Net PnL</th>
-                                </tr>
-                            </thead>
-                            <tbody id="trades-body"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="tab-content" id="positions-tab">
-                    <div class="table-responsive">
-                        <table class="pine-table aux-table">
-                            <thead>
-                                <tr>
-                                    <th>Side</th>
-                                    <th>Entry Time</th>
-                                    <th>Entry Px</th>
-                                    <th>Qty</th>
-                                    <th>Margin</th>
-                                    <th>Target TP</th>
-                                    <th>Level SL</th>
-                                    <th>Floating %</th>
-                                    <th>Floating PnL</th>
-                                </tr>
-                            </thead>
-                            <tbody id="positions-body"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </main>
+    <!-- SUMMARY METRICS -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Wallet Balance (USDT)</div>
+        <div id="stat-wallet" class="stat-value">0.00</div>
+        <div id="stat-avail" class="stat-sub">Available: 0.00 USDT</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Unrealized PnL</div>
+        <div id="stat-pnl" class="stat-value">0.00</div>
+        <div id="stat-margin" class="stat-sub">Margin Used: 0.00 USDT</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Server Time</div>
+        <div id="stat-time" class="stat-value">--:--:--</div>
+        <div id="stat-sub-info" class="stat-sub">Binance Futures Testnet</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Strategy & Rule</div>
+        <div id="stat-mode" class="stat-value" style="font-size:14px; color:var(--ios-blue); font-family:var(--font-system);">Trend</div>
+        <div id="stat-rule" class="stat-sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Reverse / Tahan Searah</div>
+      </div>
     </div>
 
-    <script src="/static/js/main.js"></script>
+    <!-- SEGMENTED TABS -->
+    <div class="tabs-wrapper">
+      <div class="segmented-control">
+        <button class="seg-btn active" onclick="switchTab('tab-screener', this)">Screener & Posisi</button>
+        <button class="seg-btn" onclick="switchTab('tab-strategy', this)">Preset Strategi</button>
+        <button class="seg-btn" onclick="switchTab('tab-tuning', this)">Tuning Blueprint</button>
+        <button class="seg-btn" onclick="switchTab('tab-api', this)">API Credentials</button>
+        <button class="seg-btn" onclick="switchTab('tab-trades', this)">Riwayat Trade</button>
+        <button class="seg-btn" onclick="switchTab('tab-logs', this)">Live Logs</button>
+      </div>
+    </div>
+
+    <!-- TAB 1: SCREENER & POSISI -->
+    <section id="tab-screener" class="tab-content">
+      <!-- SCREENER TABLE -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Live Volatility Step S/R Screener</div>
+            <div class="card-caption" id="screener-count">0 Coins Dipantau</div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Coin</th>
+                <th style="text-align:right;">Live Price</th>
+                <th style="text-align:center;">Countdown</th>
+                <th>SR Saat Ini (Confirmed)</th>
+                <th>SR Next (Candidate)</th>
+                <th style="text-align:center;">Posisi Aktif</th>
+              </tr>
+            </thead>
+            <tbody id="screener-tbody">
+              <tr>
+                <td colspan="6" style="text-align:center; color:var(--text-secondary); padding:24px; font-family:var(--font-system);">
+                  Bot dalam status stopped. Klik <b>Start Bot</b> untuk mulai screening live.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ACTIVE POSITIONS TABLE -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Posisi Terbuka (One-Way)</div>
+            <div class="card-caption" id="pos-count-caption">Posisi futures aktif yang dipantau real-time</div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Entry Price</th>
+                <th>Qty</th>
+                <th>Floating PnL</th>
+                <th>Bars Held</th>
+                <th>Dir / Adv</th>
+                <th>Trail Stop</th>
+                <th style="text-align:center;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="positions-tbody">
+              <tr>
+                <td colspan="9" style="text-align:center; color:var(--text-secondary); padding:20px; font-family:var(--font-system);">
+                  Tidak ada posisi aktif saat ini.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: BLUEPRINT STRATEGI -->
+    <section id="tab-strategy" class="tab-content" style="display:none;">
+
+      <!-- 1. KARTU PRESET STRATEGI -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Preset Strategi VolStep S/R (70 Variasi)</div>
+            <div class="card-caption">Pilih Mode dan Kategori untuk memfilter daftar preset</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveSettings()">Simpan Pengaturan</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Mode Induk S/R</label>
+            <select id="preset-mode" onchange="onModeOrCategoryChange()">
+              <option value="TREND">One-Way TREND (SR Naik: BUY, Turun: SELL)</option>
+              <option value="COUNTER">One-Way COUNTER (SR Naik: SELL, Turun: BUY)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Kategori Strategi</label>
+            <select id="preset-category" onchange="onModeOrCategoryChange()">
+              <option value="cat_a">Kategori A: Base Persen (Fixed %, Median %, Trailing)</option>
+              <option value="cat_b">Kategori B: Base Bar - TP (Exit Untung Bar)</option>
+              <option value="cat_c">Kategori C: Base Bar - SL (Cut Loss Bar)</option>
+              <option value="cat_d">Kategori D: Base Bar Murni (TP Bar + SL Bar)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label style="display:flex; justify-content:space-between;">
+              <span>Preset Strategi Terpilih</span>
+              <span style="font-size:11px; color:var(--text-tertiary);"><span id="preset-count">0</span> Preset Tersedia</span>
+            </label>
+            <select id="preset-select" onchange="onPresetSelected()" style="font-weight:600;">
+              <!-- Diisi JavaScript -->
+            </select>
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <div class="callout">
+              <div class="callout-title" id="preset-info-title">Memuat preset...</div>
+              <div class="callout-desc" id="preset-info-desc">Deskripsi aturan preset</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. KARTU EKSEKUSI -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Konfigurasi Eksekusi & S/R Engine</div>
+            <div class="card-caption">Parameter live feed, order routing, dan money management</div>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Mode Pemilihan Koin</label>
+            <select id="cfg-coin-source-mode" onchange="onCoinSourceModeChange()">
+              <option value="Manual">Input Manual</option>
+              <option value="Top Gainers">Top Gainers 24h</option>
+              <option value="Top Losers">Top Losers 24h</option>
+              <option value="Top Volume">Top Volume 24h</option>
+            </select>
+            <span class="form-help" id="cfg-coin-mode-help">Input manual daftar coin yang dipantau</span>
+          </div>
+
+          <div class="form-group" id="cfg-symbols-group">
+            <label>Daftar Coin (Koma)</label>
+            <input type="text" id="cfg-symbols" value="BTCUSDT">
+            <span class="form-help">Pisahkan simbol dengan koma</span>
+          </div>
+
+          <div id="cfg-screener-dynamic-fields" style="display:none;">
+            <div class="form-group">
+              <label>Batas Koin Screener</label>
+              <input type="number" id="cfg-max-screener-coins" value="10" min="1" max="50">
+              <span class="form-help">Jumlah koin top bursa yang dipantau</span>
+            </div>
+
+            <div class="form-group">
+              <label>Filter Min Volume 24h (USDT)</label>
+              <input type="number" id="cfg-min-24h-volume" value="10000000" min="0" step="1000000">
+              <span class="form-help">Eliminasi koin illiquid (Default: $10M)</span>
+            </div>
+
+            <div class="form-group">
+              <label>Interval Refresh Screener (Menit)</label>
+              <input type="number" id="cfg-screener-refresh" value="15" min="1" max="1440">
+              <span class="form-help">Rotasi ranking koin berkala</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Maksimal Posisi Terbuka</label>
+            <input type="number" id="cfg-max-open-positions" value="3" min="1" max="20">
+            <span class="form-help">Batas simultan koin yang open posisi</span>
+          </div>
+
+          <div class="form-group">
+            <label>Timeframe Candle</label>
+            <select id="cfg-timeframe">
+              <option value="1m">1m</option>
+              <option value="3m">3m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Aturan 1 Posisi (One-Way)</label>
+            <select id="cfg-one-way-rule">
+              <option value="Reverse Jika Lawan Arah, Tahan Jika Searah">Reverse Jika Lawan Arah, Tahan Jika Searah</option>
+              <option value="Tutup Posisi Lama & Buka Baru di SR Baru">Tutup Posisi Lama & Buka Baru di SR Baru</option>
+              <option value="Tahan Posisi Lama (Skip SR Baru Jika Masih Open)">Tahan Posisi Lama (Skip SR Baru)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Mode Eksekusi Entry</label>
+            <select id="cfg-entry-mode">
+              <option value="Market Sniping (:59s)">Market Sniping (:59s)</option>
+              <option value="Market on Bar Close (:00s)">Market on Bar Close (:00s)</option>
+              <option value="Limit Post-Only (:59s Sniping)">Limit Post-Only (:59s Sniping)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Batas Waktu Cancel Limit (Detik)</label>
+            <input type="number" id="cfg-limit-timeout" value="60.0" step="1" min="1">
+          </div>
+
+          <div class="form-group">
+            <label>Line Mode S/R</label>
+            <select id="cfg-line-mode">
+              <option value="Anchor">Anchor (Menempel Close)</option>
+              <option value="Without Anchor">Without Anchor (Kelipatan Step)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Tipe Volatilitas</label>
+            <select id="cfg-vol-type">
+              <option value="Atr">ATR (Wilder's RMA)</option>
+              <option value="Stdev">Stdev (Standard Deviation)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Lookback Period</label>
+            <input type="number" id="cfg-lookback" value="200" min="2">
+          </div>
+          <div class="form-group">
+            <label>Multiplier Volatilitas</label>
+            <input type="number" id="cfg-vol-mult" value="4.0" step="0.1" min="0.1">
+          </div>
+
+          <div class="form-group">
+            <label>Margin per Entry (%)</label>
+            <input type="number" id="cfg-margin-pct" value="5.0" step="0.5" min="0.5" max="100">
+            <span class="form-help">Persentase dari saldo wallet</span>
+          </div>
+
+          <div class="form-group">
+            <label>Mode Leverage</label>
+            <select id="cfg-leverage-mode" onchange="onLeverageModeChange()">
+              <option value="Manual">Input Manual</option>
+              <option value="Auto Max Leverage">Auto Max Leverage</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="cfg-leverage-group">
+            <label>Nilai Leverage (x)</label>
+            <input type="number" id="cfg-leverage" value="10" min="1" max="125">
+            <span class="form-help" id="cfg-leverage-help">Auto-cap otomatis ke limit bursa</span>
+          </div>
+
+          <div class="form-group">
+            <label>Tipe Mesin Trailing Stop</label>
+            <select id="cfg-trailing-mode">
+              <option value="Local">Local Bot (Evaluasi per-tick WebSocket)</option>
+              <option value="Binance Endpoint">Binance Endpoint (Native TRAILING_STOP_MARKET)</option>
+            </select>
+            <span class="form-help">Eksekusi lokal bot vs server bursa Binance</span>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-primary" onclick="saveSettings()">Simpan Pengaturan</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: TUNING BLUEPRINT -->
+    <section id="tab-tuning" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Parameter Tuning Blueprint</div>
+            <div class="card-caption">Nilai target referensi untuk parameter Fixed %, Bar TP, dan Bar SL</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveSettings()">Simpan Parameter</button>
+        </div>
+
+        <div class="form-grid">
+          <!-- Fixed F1, F2, F3 -->
+          <div class="form-group">
+            <label>Fixed 1 — F1 (%)</label>
+            <input type="number" id="cfg-fixed1" value="0.3" step="0.05" min="0.01">
+            <span class="form-help">Default: 0.3%</span>
+          </div>
+          <div class="form-group">
+            <label>Fixed 2 — F2 (%)</label>
+            <input type="number" id="cfg-fixed2" value="0.6" step="0.05" min="0.01">
+            <span class="form-help">Default: 0.6%</span>
+          </div>
+          <div class="form-group">
+            <label>Fixed 3 — F3 (%)</label>
+            <input type="number" id="cfg-fixed3" value="1.0" step="0.05" min="0.01">
+            <span class="form-help">Default: 1.0%</span>
+          </div>
+
+          <!-- Bar TP: B1, B2, BD -->
+          <div class="form-group">
+            <label>TP Bar — B1 (Bars)</label>
+            <input type="number" id="cfg-bar-tp1" value="3" min="1" max="100">
+            <span class="form-help">BarFix / BarProf ke-B1</span>
+          </div>
+          <div class="form-group">
+            <label>TP Bar — B2 (Bars)</label>
+            <input type="number" id="cfg-bar-tp2" value="6" min="1" max="100">
+            <span class="form-help">BarFix / BarProf ke-B2</span>
+          </div>
+          <div class="form-group">
+            <label>Candle Searah — BD (Candles)</label>
+            <input type="number" id="cfg-bar-tp-dir" value="3" min="1" max="20">
+            <span class="form-help">BarDir candle berturut</span>
+          </div>
+
+          <!-- Bar SL: S1, S2, SA -->
+          <div class="form-group">
+            <label>SL Bar — S1 (Bars)</label>
+            <input type="number" id="cfg-sl-bar1" value="4" min="1" max="100">
+            <span class="form-help">BarLoss / MaxBar ke-S1</span>
+          </div>
+          <div class="form-group">
+            <label>SL Bar — S2 (Bars)</label>
+            <input type="number" id="cfg-sl-bar2" value="8" min="1" max="100">
+            <span class="form-help">MaxBar ke-S2</span>
+          </div>
+          <div class="form-group">
+            <label>Candle Lawan — SA (Candles)</label>
+            <input type="number" id="cfg-sl-bar-adv" value="3" min="1" max="20">
+            <span class="form-help">BarAdv candle lawan rugi</span>
+          </div>
+
+          <!-- Min SR Levels Median -->
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Min SR Selesai (Entry Median %)</label>
+            <input type="number" id="cfg-min-levels" value="10" min="1" max="100">
+            <span class="form-help">Syarat minimal sampel data S/R selesai sebelum strategi berbasis Median diizinkan membuka posisi.</span>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+          <button class="btn btn-primary" onclick="saveSettings()">Simpan Parameter</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: API KEY & KONEKSI -->
+    <section id="tab-api" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Kredensial Binance Futures API</div>
+            <div class="card-caption">Kunci akses untuk penempatan order dan sinkronisasi saldo</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="testConnection()">Uji Koneksi</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Environment Mode</label>
+            <select id="cfg-testnet">
+              <option value="true">Binance Futures Testnet / Demo</option>
+              <option value="false">Binance Futures Live / Mainnet</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Binance API Key</label>
+            <input type="text" id="cfg-api-key" placeholder="API Key...">
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Binance Secret Key</label>
+            <input type="password" id="cfg-secret-key" placeholder="Secret Key...">
+          </div>
+        </div>
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button class="btn btn-primary" onclick="saveSettings()">Simpan Kredensial</button>
+          <button class="btn btn-outline" onclick="testConnection()">Uji Koneksi API</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: RIWAYAT TRADE -->
+    <section id="tab-trades" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Riwayat Eksekusi Trade</div>
+            <div class="card-caption">Trade terealisasi yang ditarik dari exchange</div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Coin</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>Qty</th>
+                <th>Net PnL (USDT)</th>
+                <th>Move %</th>
+                <th>Alasan Exit</th>
+              </tr>
+            </thead>
+            <tbody id="trades-tbody">
+              <tr>
+                <td colspan="9" style="text-align:center; color:var(--text-secondary); padding:24px; font-family:var(--font-system);">
+                  Belum ada riwayat trade.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: LIVE LOGS -->
+    <section id="tab-logs" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Activity Logs</div>
+            <div class="card-caption">Log eksekusi real-time server</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="clearLogs()">Bersihkan</button>
+        </div>
+        <div id="terminal-box" class="terminal">
+          <div class="log-line"><span class="log-ts">[00:00:00]</span><span class="log-info">Menghubungkan ke backend...</span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- DYNAMIC ISLAND TOAST NOTIFICATION -->
+  <div id="toast-island" class="toast-info" onclick="dismissToast()">
+    <div class="toast-icon">
+      <svg id="toast-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <div id="toast-msg" class="toast-msg">Notifikasi</div>
+  </div>
+
+  <script>
+    let currentTab = 'tab-screener';
+    let pollInterval = null;
+    let toastTimeout = null;
+
+    function showToast(msg, type = 'info') {
+      const el = document.getElementById('toast-island');
+      const msgEl = document.getElementById('toast-msg');
+      const svgEl = document.getElementById('toast-svg');
+
+      el.className = `toast-${type}`;
+      msgEl.innerText = msg;
+
+      if (type === 'success') {
+        svgEl.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+      } else if (type === 'error') {
+        svgEl.innerHTML = '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>';
+      } else {
+        svgEl.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>';
+      }
+
+      clearTimeout(toastTimeout);
+      el.classList.add('show');
+      toastTimeout = setTimeout(() => {
+        el.classList.remove('show');
+      }, 3500);
+    }
+
+    function dismissToast() {
+      document.getElementById('toast-island').classList.remove('show');
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.seg-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).style.display = 'block';
+      if (btn) btn.classList.add('active');
+      currentTab = tabId;
+    }
+
+    let allPresetsData = null;
+
+    async function loadPresets() {
+      try {
+        const res = await fetch('/api/presets');
+        allPresetsData = await res.json();
+      } catch (e) {
+        console.error("Gagal load presets:", e);
+      }
+    }
+
+    function renderPresetDropdown(selectedPresetKey = null) {
+      if (!allPresetsData || !allPresetsData.presets) return;
+
+      const mode = document.getElementById('preset-mode').value;
+      const cat = document.getElementById('preset-category').value;
+      const list = (allPresetsData.presets[mode] && allPresetsData.presets[mode][cat]) || [];
+
+      const select = document.getElementById('preset-select');
+      select.innerHTML = '';
+
+      document.getElementById('preset-count').innerText = list.length;
+
+      let matched = false;
+      list.forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = item.key;
+        opt.textContent = item.label;
+        if (selectedPresetKey && item.key === selectedPresetKey) {
+          opt.selected = true;
+          matched = true;
+        }
+        select.appendChild(opt);
+      });
+
+      if (!matched && list.length > 0) {
+        select.selectedIndex = 0;
+      }
+
+      onPresetSelected();
+    }
+
+    function onModeOrCategoryChange() {
+      renderPresetDropdown();
+    }
+
+    function onCoinSourceModeChange() {
+      const mode = document.getElementById('cfg-coin-source-mode').value;
+      const symGroup = document.getElementById('cfg-symbols-group');
+      const dynGroup = document.getElementById('cfg-screener-dynamic-fields');
+      const modeHelp = document.getElementById('cfg-coin-mode-help');
+
+      if (mode === 'Manual') {
+        symGroup.style.display = 'block';
+        dynGroup.style.display = 'none';
+        if (modeHelp) modeHelp.innerText = 'Input manual daftar coin yang dipantau';
+      } else {
+        symGroup.style.display = 'none';
+        dynGroup.style.display = 'contents';
+        if (modeHelp) modeHelp.innerText = `Otomatis memilih koin bursa berdasarkan ${mode} 24h`;
+      }
+    }
+
+    function onLeverageModeChange() {
+      const mode = document.getElementById('cfg-leverage-mode').value;
+      const levInput = document.getElementById('cfg-leverage');
+      const levHelp = document.getElementById('cfg-leverage-help');
+
+      if (mode === 'Auto Max Leverage') {
+        levInput.disabled = true;
+        levInput.style.opacity = '0.5';
+        levHelp.innerHTML = '';
+      } else {
+        levInput.disabled = false;
+        levInput.style.opacity = '1';
+        levHelp.innerHTML = 'Auto-cap otomatis ke limit bursa';
+      }
+    }
+
+    function onPresetSelected() {
+      if (!allPresetsData) return;
+      const key = document.getElementById('preset-select').value;
+      const mode = document.getElementById('preset-mode').value;
+      const cat = document.getElementById('preset-category').value;
+      const list = (allPresetsData.presets[mode] && allPresetsData.presets[mode][cat]) || [];
+      const item = list.find(p => p.key === key);
+
+      const titleEl = document.getElementById('preset-info-title');
+      const descEl = document.getElementById('preset-info-desc');
+
+      if (item) {
+        titleEl.innerHTML = `<span style="color:var(--ios-blue); font-weight:600;">${item.key}</span>`;
+
+        let tpDesc = `TP: <b>${item.tp_type}</b>`;
+        if (item.tp_type === 'Median %') tpDesc += ` (${item.tp_mult}x Median)`;
+        else if (item.tp_type === 'Fixed %') tpDesc += ` (Parameter F)`;
+        else if (item.tp_type === 'BarFix') tpDesc += ` (Bar N Fix)`;
+        else if (item.tp_type === 'BarProf') tpDesc += ` (Bar N Profit)`;
+        else if (item.tp_type === 'BarDir') tpDesc += ` (N Candle Searah)`;
+
+        let slDesc = `SL: <b>${item.sl_type}</b>`;
+        if (item.sl_type === 'Median %') slDesc += ` (${item.sl_mult}x Median)`;
+        else if (item.sl_type === 'Fixed %') slDesc += ` (Parameter F)`;
+        else if (item.sl_type === 'BarLoss') slDesc += ` (Bar N Loss)`;
+        else if (item.sl_type === 'MaxBar') slDesc += ` (Bar N Timeout)`;
+        else if (item.sl_type === 'BarAdv') slDesc += ` (N Candle Lawan)`;
+        else if (item.sl_type === 'NextSR Only') slDesc += ` (SR Baru)`;
+
+        let trDesc = item.use_trail ? `Trailing: <b>Aktif</b> (${item.trail_type || 'Median %'})` : `Trailing: <b>Nonaktif</b>`;
+
+        descEl.innerHTML = `${tpDesc} &nbsp;•&nbsp; ${slDesc} &nbsp;•&nbsp; ${trDesc}`;
+      } else {
+        titleEl.innerText = "Tidak ada preset terpilih";
+        descEl.innerText = "-";
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        await loadPresets();
+        const res = await fetch('/api/settings');
+        const cfg = await res.json();
+
+        // Preset Settings
+        if (cfg.selected_mode) document.getElementById('preset-mode').value = cfg.selected_mode;
+        if (cfg.selected_cat) document.getElementById('preset-category').value = cfg.selected_cat;
+        renderPresetDropdown(cfg.selected_preset);
+
+        // Parameter Tuning
+        if (cfg.fixed1 !== undefined) document.getElementById('cfg-fixed1').value = cfg.fixed1;
+        if (cfg.fixed2 !== undefined) document.getElementById('cfg-fixed2').value = cfg.fixed2;
+        if (cfg.fixed3 !== undefined) document.getElementById('cfg-fixed3').value = cfg.fixed3;
+        if (cfg.bar_tp1 !== undefined) document.getElementById('cfg-bar-tp1').value = cfg.bar_tp1;
+        if (cfg.bar_tp2 !== undefined) document.getElementById('cfg-bar-tp2').value = cfg.bar_tp2;
+        if (cfg.bar_tp_dir !== undefined) document.getElementById('cfg-bar-tp-dir').value = cfg.bar_tp_dir;
+        if (cfg.sl_bar1 !== undefined) document.getElementById('cfg-sl-bar1').value = cfg.sl_bar1;
+        if (cfg.sl_bar2 !== undefined) document.getElementById('cfg-sl-bar2').value = cfg.sl_bar2;
+        if (cfg.sl_bar_adv !== undefined) document.getElementById('cfg-sl-bar-adv').value = cfg.sl_bar_adv;
+        if (cfg.min_levels_median !== undefined) document.getElementById('cfg-min-levels').value = cfg.min_levels_median;
+
+        // General & Execution
+        if (cfg.coin_source_mode) document.getElementById('cfg-coin-source-mode').value = cfg.coin_source_mode;
+        if (cfg.max_screener_coins !== undefined) document.getElementById('cfg-max-screener-coins').value = cfg.max_screener_coins;
+        if (cfg.min_24h_volume_usdt !== undefined) document.getElementById('cfg-min-24h-volume').value = cfg.min_24h_volume_usdt;
+        if (cfg.screener_refresh_min !== undefined) document.getElementById('cfg-screener-refresh').value = cfg.screener_refresh_min;
+        if (cfg.max_open_positions !== undefined) document.getElementById('cfg-max-open-positions').value = cfg.max_open_positions;
+        onCoinSourceModeChange();
+
+        document.getElementById('cfg-symbols').value = (cfg.symbols || []).join(',');
+        document.getElementById('cfg-timeframe').value = cfg.timeframe || '1m';
+        document.getElementById('cfg-one-way-rule').value = cfg.one_way_rule || 'Reverse Jika Lawan Arah, Tahan Jika Searah';
+        document.getElementById('cfg-entry-mode').value = cfg.entry_mode || 'Market Sniping (:59s)';
+        document.getElementById('cfg-limit-timeout').value = cfg.limit_timeout_sec || 60.0;
+        document.getElementById('cfg-line-mode').value = cfg.line_mode || 'Anchor';
+        document.getElementById('cfg-vol-type').value = cfg.vol_type || 'Atr';
+        document.getElementById('cfg-lookback').value = cfg.lookback || 200;
+        document.getElementById('cfg-vol-mult').value = cfg.vol_mult || 4.0;
+        document.getElementById('cfg-margin-pct').value = cfg.margin_pct || 5.0;
+        if (cfg.leverage_mode) document.getElementById('cfg-leverage-mode').value = cfg.leverage_mode;
+        document.getElementById('cfg-leverage').value = cfg.leverage || 10;
+        if (cfg.trailing_mode) document.getElementById('cfg-trailing-mode').value = cfg.trailing_mode;
+        onLeverageModeChange();
+        document.getElementById('cfg-testnet').value = String(cfg.use_testnet !== false);
+        document.getElementById('cfg-api-key').value = cfg.api_key || '';
+        document.getElementById('cfg-secret-key').value = cfg.secret_key || '';
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function saveSettings() {
+      const symbolsRaw = document.getElementById('cfg-symbols').value;
+      const symbols = symbolsRaw.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
+      const selectedMode = document.getElementById('preset-mode').value;
+      const payload = {
+        symbols: symbols,
+        coin_source_mode: document.getElementById('cfg-coin-source-mode').value,
+        max_screener_coins: parseInt(document.getElementById('cfg-max-screener-coins').value) || 10,
+        min_24h_volume_usdt: parseFloat(document.getElementById('cfg-min-24h-volume').value) || 10000000.0,
+        screener_refresh_min: parseInt(document.getElementById('cfg-screener-refresh').value) || 15,
+        max_open_positions: parseInt(document.getElementById('cfg-max-open-positions').value) || 3,
+        timeframe: document.getElementById('cfg-timeframe').value,
+        strategy_mode: selectedMode === 'COUNTER' ? 'One-Way Counter' : 'One-Way Trend',
+        one_way_rule: document.getElementById('cfg-one-way-rule').value,
+        entry_mode: document.getElementById('cfg-entry-mode').value,
+        limit_timeout_sec: parseFloat(document.getElementById('cfg-limit-timeout').value),
+        line_mode: document.getElementById('cfg-line-mode').value,
+        vol_type: document.getElementById('cfg-vol-type').value,
+        lookback: parseInt(document.getElementById('cfg-lookback').value),
+        vol_mult: parseFloat(document.getElementById('cfg-vol-mult').value),
+        margin_pct: parseFloat(document.getElementById('cfg-margin-pct').value),
+        leverage_mode: document.getElementById('cfg-leverage-mode').value,
+        leverage: parseInt(document.getElementById('cfg-leverage').value) || 10,
+        trailing_mode: document.getElementById('cfg-trailing-mode').value,
+
+        // Presets & Tuning
+        selected_mode: selectedMode,
+        selected_cat: document.getElementById('preset-category').value,
+        selected_preset: document.getElementById('preset-select').value,
+        fixed1: parseFloat(document.getElementById('cfg-fixed1').value),
+        fixed2: parseFloat(document.getElementById('cfg-fixed2').value),
+        fixed3: parseFloat(document.getElementById('cfg-fixed3').value),
+        bar_tp1: parseInt(document.getElementById('cfg-bar-tp1').value),
+        bar_tp2: parseInt(document.getElementById('cfg-bar-tp2').value),
+        bar_tp_dir: parseInt(document.getElementById('cfg-bar-tp-dir').value),
+        sl_bar1: parseInt(document.getElementById('cfg-sl-bar1').value),
+        sl_bar2: parseInt(document.getElementById('cfg-sl-bar2').value),
+        sl_bar_adv: parseInt(document.getElementById('cfg-sl-bar-adv').value),
+        min_levels_median: parseInt(document.getElementById('cfg-min-levels').value),
+
+        use_testnet: document.getElementById('cfg-testnet').value === 'true',
+        api_key: document.getElementById('cfg-api-key').value.trim(),
+        secret_key: document.getElementById('cfg-secret-key').value.trim(),
+      };
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        showToast(data.message || 'Pengaturan tersimpan', 'success');
+      } catch (e) {
+        showToast('Gagal menyimpan: ' + e, 'error');
+      }
+    }
+
+    async function testConnection() {
+      showToast('Menguji koneksi API ke Binance...', 'info');
+      try {
+        const payload = {
+          api_key: document.getElementById('cfg-api-key').value.trim(),
+          secret_key: document.getElementById('cfg-secret-key').value.trim(),
+          use_testnet: document.getElementById('cfg-testnet').value === 'true',
+        };
+        const res = await fetch('/api/test_connection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, 'success');
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (e) {
+        showToast('Gagal uji koneksi: ' + e, 'error');
+      }
+    }
+
+    async function startBot() {
+      try {
+        const res = await fetch('/api/bot/start', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, 'success');
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (e) {
+        showToast('Gagal start bot: ' + e, 'error');
+      }
+    }
+
+    async function stopBot() {
+      try {
+        const res = await fetch('/api/bot/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, 'info');
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (e) {
+        showToast('Gagal stop bot: ' + e, 'error');
+      }
+    }
+
+    async function closePosition(symbol) {
+      if (!confirm(`Tutup posisi ${symbol} sekarang di harga pasar?`)) return;
+      try {
+        const res = await fetch('/api/close_position', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: symbol }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, 'success');
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (e) {
+        showToast('Gagal tutup posisi: ' + e, 'error');
+      }
+    }
+
+    function clearLogs() {
+      document.getElementById('terminal-box').innerHTML = '';
+      showToast('Log terminal dibersihkan', 'info');
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        // 1. Update Topbar & Status Badge
+        const badge = document.getElementById('bot-badge');
+        const badgeText = document.getElementById('bot-badge-text');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+
+        if (data.status === 'RUNNING') {
+          badge.className = 'status-capsule badge-running';
+          badgeText.innerText = 'RUNNING';
+          btnStart.style.display = 'none';
+          btnStop.style.display = 'inline-flex';
+        } else if (data.status === 'WARMING_UP') {
+          badge.className = 'status-capsule badge-warmup';
+          badgeText.innerText = 'WARMUP';
+          btnStart.style.display = 'none';
+          btnStop.style.display = 'inline-flex';
+        } else {
+          badge.className = 'status-capsule badge-stopped';
+          badgeText.innerText = 'STOPPED';
+          btnStart.style.display = 'inline-flex';
+          btnStop.style.display = 'none';
+        }
+
+        // 2. Summary Stats
+        if (data.balance) {
+          document.getElementById('stat-wallet').innerText = Number(data.balance.wallet_balance || 0).toFixed(2);
+          document.getElementById('stat-avail').innerText = `Available: ${Number(data.balance.available_balance || 0).toFixed(2)} USDT`;
+          const pnlEl = document.getElementById('stat-pnl');
+          const pnlVal = Number(data.balance.unrealized_pnl || 0);
+          pnlEl.innerText = (pnlVal >= 0 ? '+' : '') + pnlVal.toFixed(2);
+          pnlEl.style.color = pnlVal > 0 ? 'var(--ios-green)' : (pnlVal < 0 ? 'var(--ios-red)' : 'var(--text-primary)');
+          document.getElementById('stat-margin').innerText = `Margin Used: ${Number(data.balance.margin_used || 0).toFixed(2)} USDT`;
+        }
+        document.getElementById('stat-time').innerText = data.server_time || '--:--:--';
+        if (data.config) {
+          document.getElementById('stat-mode').innerText = data.config.selected_preset || data.config.strategy_mode || 'Trend';
+          document.getElementById('stat-rule').innerText = data.config.one_way_rule || '-';
+        }
+
+        // 3. Screener Table
+        const screenerCount = document.getElementById('screener-count');
+        const coinMode = (data.config && data.config.coin_source_mode) || 'Manual';
+        screenerCount.innerText = `${(data.screener || []).length} Coins Dipantau (${coinMode})`;
+
+        const sTbody = document.getElementById('screener-tbody');
+        if (data.screener && data.screener.length > 0) {
+          let html = '';
+          for (const s of data.screener) {
+            let priceCol = 'var(--text-primary)';
+            let arrow = '';
+            if (s.tick_dir > 0) { priceCol = 'var(--ios-green)'; arrow = '↑ '; }
+            else if (s.tick_dir < 0) { priceCol = 'var(--ios-red)'; arrow = '↓ '; }
+
+            let srConfirmed = '<span style="color:var(--text-tertiary);">-</span>';
+            if (s.confirmed_sr_str && s.confirmed_sr_str !== '-') {
+              let tag = s.confirmed_dir === 'BULL' ? '<span class="pill pill-bull">BULL</span>' : '<span class="pill pill-bear">BEAR</span>';
+              let pct = s.confirmed_pct ? `<span style="font-size:11px; color:var(--text-secondary); margin-left:4px;">${s.confirmed_pct > 0 ? '+' : ''}${s.confirmed_pct}%</span>` : '';
+              srConfirmed = `<span>${s.confirmed_sr_str}</span> ${tag} ${pct}`;
+            }
+
+            let srNext = '<span style="color:var(--text-tertiary);">-</span>';
+            if (s.next_sr_active) {
+              let nTag = s.next_sr_dir === 'BULL' ? '<span class="pill pill-bull">BULL</span>' : '<span class="pill pill-bear">BEAR</span>';
+              let pct = s.next_sr_pct ? `<span style="font-size:11px; color:var(--text-secondary); margin-left:4px;">${s.next_sr_pct > 0 ? '+' : ''}${s.next_sr_pct}%</span>` : '';
+              srNext = `<span>${s.next_sr_price_str}</span> ${nTag} ${pct}`;
+            }
+
+            let posBadge = '<span style="color:var(--text-tertiary);">-</span>';
+            if (s.position) {
+              let pCol = s.position.side === 'BUY' ? 'var(--ios-green)' : 'var(--ios-red)';
+              let pnl = s.position.unrealized_pnl || 0;
+              let pnlStr = (pnl >= 0 ? '+' : '') + Number(pnl).toFixed(2);
+              posBadge = `<span style="color:${pCol}; font-weight:600;">${s.position.side}</span> <span style="font-size:11px; color:var(--text-secondary);">(${pnlStr})</span>`;
+            }
+
+            const levBadge = s.effective_leverage ? `<span class="pill pill-neutral" style="font-size:10px; margin-left:6px; padding:2px 6px;">${s.effective_leverage}x</span>` : '';
+
+            html += `<tr>
+              <td><span style="font-weight:600; color:var(--text-primary);">${s.symbol}</span>${levBadge}</td>
+              <td style="text-align:right; font-weight:600; color:${priceCol}">${arrow}${s.live_price_str}</td>
+              <td style="text-align:center;"><span class="pill pill-neutral">${s.countdown}</span></td>
+              <td>${srConfirmed}</td>
+              <td>${srNext}</td>
+              <td style="text-align:center;">${posBadge}</td>
+            </tr>`;
+          }
+          sTbody.innerHTML = html;
+        }
+
+        // 4. Positions Table
+        const pTbody = document.getElementById('positions-tbody');
+        const posKeys = Object.keys(data.positions || {});
+        const maxOpen = (data.config && data.config.max_open_positions) || 3;
+        const posCaption = document.getElementById('pos-count-caption');
+        if (posCaption) {
+          posCaption.innerText = `Posisi futures aktif: ${posKeys.length}/${maxOpen} Kuota Terpakai`;
+        }
+        if (posKeys.length > 0) {
+          let pHtml = '';
+          for (const sym of posKeys) {
+            const p = data.positions[sym];
+            const pnl = p.unrealized_pnl || 0;
+            const pnlCol = pnl >= 0 ? 'var(--ios-green)' : 'var(--ios-red)';
+            const sideClass = p.side === 'BUY' ? 'pill-bull' : 'pill-bear';
+            const trail = p.algo_trailing_id ? `<span class="pill pill-neutral" style="font-size:10px; padding:2px 6px;">Binance #${p.algo_trailing_id}</span>` : (p.trail_stop ? Number(p.trail_stop).toFixed(2) : '-');
+
+            pHtml += `<tr>
+              <td><span style="font-weight:600; color:var(--text-primary);">${sym}</span></td>
+              <td><span class="pill ${sideClass}">${p.side}</span></td>
+              <td>${Number(p.entry).toFixed(4)}</td>
+              <td>${p.qty}</td>
+              <td style="font-weight:600; color:${pnlCol};">${(pnl >= 0 ? '+' : '') + Number(pnl).toFixed(2)} USDT</td>
+              <td>${p.bars_held} bars</td>
+              <td>D:${p.dir_cnt} • A:${p.adv_cnt}</td>
+              <td>${trail}</td>
+              <td style="text-align:center;">
+                <button class="btn btn-danger btn-sm" onclick="closePosition('${sym}')">Close</button>
+              </td>
+            </tr>`;
+          }
+          pTbody.innerHTML = pHtml;
+        } else {
+          pTbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-secondary); padding:20px; font-family:var(--font-system);">Tidak ada posisi aktif saat ini.</td></tr>`;
+        }
+
+        // 5. Trades History Table
+        const trTbody = document.getElementById('trades-tbody');
+        if (data.trades && data.trades.length > 0) {
+          let trHtml = '';
+          for (const t of data.trades) {
+            const pCol = t.pnl > 0 ? 'var(--ios-green)' : (t.pnl < 0 ? 'var(--ios-red)' : 'var(--text-secondary)');
+            const sideClass = t.side === 'BUY' ? 'pill-bull' : 'pill-bear';
+            const price = t.price || t.entry || t.exit || '-';
+            const pnlStr = (t.pnl !== undefined && t.pnl !== null) ? ((t.pnl > 0 ? '+' : '') + t.pnl) : '-';
+            const pctStr = t.pct ? ((t.pct > 0 ? '+' : '') + t.pct + '%') : '-';
+            trHtml += `<tr>
+              <td>${t.time}</td>
+              <td><span style="font-weight:600; color:var(--text-primary);">${t.symbol}</span></td>
+              <td><span class="pill ${sideClass}">${t.side}</span></td>
+              <td>${t.entry || price}</td>
+              <td>${t.exit || price}</td>
+              <td>${t.qty}</td>
+              <td style="font-weight:600; color:${pCol};">${pnlStr}</td>
+              <td style="font-weight:600; color:${pCol};">${pctStr}</td>
+              <td><span class="pill pill-neutral">${t.reason || 'FILLED'}</span></td>
+            </tr>`;
+          }
+          trTbody.innerHTML = trHtml;
+        } else {
+          trTbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-secondary); padding:24px; font-family:var(--font-system);">Belum ada riwayat trade.</td></tr>`;
+        }
+
+        // 6. Terminal Logs
+        if (data.logs && data.logs.length > 0) {
+          const tBox = document.getElementById('terminal-box');
+          let lHtml = '';
+          for (const l of data.logs) {
+            let lClass = 'log-info';
+            if (l.level === 'WARN') lClass = 'log-warn';
+            if (l.level === 'ERROR') lClass = 'log-error';
+            lHtml += `<div class="log-line"><span class="log-ts">[${l.time}]</span><span class="${lClass}">${l.text}</span></div>`;
+          }
+          tBox.innerHTML = lHtml;
+          tBox.scrollTop = tBox.scrollHeight;
+        }
+
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Init
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSettings();
+      pollStatus();
+      pollInterval = setInterval(pollStatus, 1000);
+    });
+  </script>
 </body>
 </html>

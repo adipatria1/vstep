@@ -31,6 +31,7 @@ class BotNotificationService : Service() {
         .build()
 
     private var lastSeenLogCount = 0
+    private var lastSeenTradeCount = 0
     private var lastNotificationTime = 0L
 
     override fun onCreate() {
@@ -125,7 +126,7 @@ class BotNotificationService : Service() {
                 val serverUrl = prefs.serverUrl
                 try {
                     val req = Request.Builder()
-                        .url("$serverUrl/api/demo/status")
+                        .url("$serverUrl/api/status")
                         .build()
 
                     httpClient.newCall(req).execute().use { resp ->
@@ -134,20 +135,47 @@ class BotNotificationService : Service() {
                             val json = JSONObject(body)
                             val isRunning = json.optBoolean("is_running", false)
                             val logs = json.optJSONArray("logs")
+                            val trades = json.optJSONArray("trades")
 
                             // Update text status notification
-                            val statusMsg = if (isRunning) "Bot Running | WebSocket Sniper Aktif" else "Bot Standby"
+                            val statusMsg = if (isRunning) "Bot Running | WebSocket Sniper (:59s) Aktif" else "Bot Standby"
                             val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                             notifManager.notify(FOREGROUND_NOTIF_ID, createForegroundNotification(statusMsg))
+
+                            // Periksa trade yang baru selesai
+                            if (trades != null && trades.length() > lastSeenTradeCount) {
+                                for (i in lastSeenTradeCount until trades.length()) {
+                                    val t = trades.getJSONObject(i)
+                                    val sym = t.optString("symbol", "")
+                                    val side = t.optString("side", "")
+                                    val pnl = t.optDouble("pnl", 0.0)
+                                    val pct = t.optDouble("pct", 0.0)
+                                    val reason = t.optString("reason", "Trade Exit")
+                                    showTradeNotification(
+                                        "⚡ Trade Selesai: $sym $side",
+                                        "$reason | PnL: ${String.format("%.2f", pnl)} USDT (${String.format("%.2f", pct)}%)"
+                                    )
+                                }
+                                lastSeenTradeCount = trades.length()
+                            }
 
                             // Periksa log terbaru untuk sinyal / eksekusi order
                             if (logs != null && logs.length() > lastSeenLogCount) {
                                 for (i in lastSeenLogCount until logs.length()) {
                                     val entry = logs.getJSONObject(i)
                                     val level = entry.optString("level")
-                                    val msg = entry.optString("message")
+                                    val msg = entry.optString("text", entry.optString("message", ""))
 
-                                    if (level == "trade" || msg.contains("BERHASIL") || msg.contains("SNIPER") || msg.contains("EXIT")) {
+                                    if (msg.isNotEmpty() && (
+                                        level == "trade" ||
+                                        msg.contains("BERHASIL") ||
+                                        msg.contains("SNIPING") ||
+                                        msg.contains("ENTRY") ||
+                                        msg.contains("TP") ||
+                                        msg.contains("SL") ||
+                                        msg.contains("TRAILING") ||
+                                        msg.contains("CLOSE")
+                                    )) {
                                         showTradeNotification("⚡ VolStep Order Triggered", msg)
                                     }
                                 }

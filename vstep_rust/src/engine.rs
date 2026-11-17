@@ -1,1823 +1,1841 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+#![allow(dead_code)]
 
-#[derive(Clone, Debug)]
-pub struct Pos {
-    pub side: i32, // 1 = Long, -1 = Short
-    pub entry: f64,
-    pub entry_sr: f64,
-    pub qty: f64,
-    pub margin: f64,
-    pub fee_in: f64, // Fee entry (Taker/Market) yang dibayar saat buka posisi
-    pub tp: Option<f64>,
-    pub sl: Option<f64>,
-    pub tp_bar_t: i32, // 0 = bukan Bar TP | 3 = BarFix | 4 = BarProf | 5 = BarDir
-    pub tp_bar_n: i32, // target N bar / candle searah
-    pub dir_cnt: i32,  // hitungan candle searah berturut-turut
-    pub tp_desc: String,
-    pub sl_bar_t: i32, // 0 = bukan Bar SL | 3 = BarLoss | 4 = MaxBar | 5 = BarAdv
-    pub sl_bar_n: i32, // target N bar / candle lawan untuk SL
-    pub adv_cnt: i32,  // hitungan candle lawan arah berturut-turut
-    pub sl_desc: String,
-    pub act_pct: Option<f64>,
-    pub dist_pct: Option<f64>,
-    pub ext: f64,
-    pub tstop: Option<f64>,
-    pub bar: usize,
-    pub entry_time: i64,
-    pub lvl_start_time: Option<i64>,
-    pub tr_trig_px: Option<f64>,
-    pub tr_act_time: Option<i64>,
-    pub tr_act_stop: Option<f64>,
+use crate::binance_client::BinanceFuturesClient;
+use crate::models::{
+    BotConfig, LogEntry, PositionInfo, TradeRecord,
+};
+use crate::presets::find_preset;
+use futures_util::{SinkExt, StreamExt};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio_tungstenite::connect_async;
+
+pub const WSS_ENDPOINTS: &[&str] = &[
+    "wss://fstream.binance.com/ws",
+    "wss://fstream.binance.com:9443/ws",
+];
+
+pub fn get_interval_ms(interval: &str) -> i64 {
+    match interval {
+        "1m" => 60_000,
+        "3m" => 180_000,
+        "5m" => 300_000,
+        "15m" => 900_000,
+        "30m" => 1_800_000,
+        "1h" => 3_600_000,
+        "2h" => 7_200_000,
+        "4h" => 14_400_000,
+        "6h" => 21_600_000,
+        "8h" => 28_800_000,
+        "12h" => 43_200_000,
+        "1d" => 86_400_000,
+        _ => 60_000,
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TradeRec {
-    pub side: String,
-    #[serde(rename = "entryTime")]
-    pub entry_time: String,
-    #[serde(rename = "entryPx")]
-    pub entry_px: f64,
-    #[serde(rename = "entryPxStr")]
-    pub entry_px_str: String,
-    #[serde(rename = "entrySr")]
-    pub entry_sr: f64,
-    #[serde(rename = "entrySrStr")]
-    pub entry_sr_str: String,
-    #[serde(rename = "tpPx")]
-    pub tp_px: String,
-    #[serde(rename = "slPx")]
-    pub sl_px: String,
-    #[serde(rename = "tpDesc")]
-    pub tp_desc: String,
-    #[serde(rename = "slDesc")]
-    pub sl_desc: String,
-    #[serde(rename = "exitTime")]
-    pub exit_time: String,
-    #[serde(rename = "exitPx")]
-    pub exit_px: f64,
-    #[serde(rename = "exitPxStr")]
-    pub exit_px_str: String,
-    #[serde(rename = "closePx")]
-    pub close_px: f64,
-    #[serde(rename = "closePxStr")]
-    pub close_px_str: String,
-    #[serde(rename = "srPx")]
-    pub sr_px: f64,
-    #[serde(rename = "srPxStr")]
-    pub sr_px_str: String,
-    pub why: String,
-    #[serde(rename = "movePct")]
-    pub move_pct: String,
-    #[serde(rename = "netPnl")]
-    pub net_pnl: String,
-    pub pnl_color: String,
+// =====================================================================
+// VOLSTEP ENGINE (PURE MATH PINE SCRIPT v6 REPLICATION)
+// =====================================================================
+#[derive(Debug, Clone)]
+pub struct VolStepEngine {
+    pub symbol: String,
+    pub line_mode: String,
+    pub vol_type: String,
+    pub length: usize,
+    pub vol_mult: f64,
+    pub stdev_bessel: bool,
+
+    pub closed_closes: VecDeque<f64>,
+    pub tr_warmup: Vec<f64>,
+    pub confirmed_rma: Option<f64>,
+    pub prev_closed_close: Option<f64>,
+    pub closed_bars_count: usize,
+    pub last_closed_open_time: i64,
+
+    pub price_decimals: usize,
+
+    pub confirmed_sr: Option<f64>,
+    pub cur_level: Option<f64>,
+    pub prev_level: Option<f64>,
+    pub cur_pct: Option<f64>,
+    pub cur_dir: Option<String>,
+    pub confirmed_vol_value: Option<f64>,
+
+    pub sr_high: Option<f64>,
+    pub sr_low: Option<f64>,
+    pub hi_arr: Vec<f64>,
+    pub lo_arr: Vec<f64>,
+
+    pub live_open: Option<f64>,
+    pub live_high: Option<f64>,
+    pub live_low: Option<f64>,
+    pub live_close: Option<f64>,
+    pub tick_dir: i32,
+    pub candle_open_time: i64,
+    pub candle_close_time: i64,
+    pub pending_tick: Option<(f64, Option<String>, i64)>,
+
+    pub live_vol_value: Option<f64>,
+    pub next_sr_active: bool,
+    pub next_sr_dir: Option<String>,
+    pub next_sr_price: Option<f64>,
+    pub next_sr_pct: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OpenPositionView {
-    pub side: String,
-    #[serde(rename = "entryTime")]
-    pub entry_time: String,
-    #[serde(rename = "entryPx")]
-    pub entry_px: f64,
-    #[serde(rename = "entryPxStr")]
-    pub entry_px_str: String,
-    #[serde(rename = "currentClosePx")]
-    pub current_close_px: f64,
-    #[serde(rename = "currentClosePxStr")]
-    pub current_close_px_str: String,
-    #[serde(rename = "currentSrPx")]
-    pub current_sr_px: f64,
-    #[serde(rename = "currentSrPxStr")]
-    pub current_sr_px_str: String,
-    pub qty: f64,
-    pub margin: f64,
-    #[serde(rename = "feeIn")]
-    pub fee_in: f64,
-    #[serde(rename = "tpPx")]
-    pub tp_px: String,
-    #[serde(rename = "slPx")]
-    pub sl_px: String,
-    #[serde(rename = "tpDesc")]
-    pub tp_desc: String,
-    #[serde(rename = "slDesc")]
-    pub sl_desc: String,
-    #[serde(rename = "floatPct")]
-    pub float_pct: String,
-    #[serde(rename = "floatUsdt")]
-    pub float_usdt: String,
-    pub pnl_color: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct Sim {
-    pub name: String,
-    pub key: String,
-    pub mode: i32, // 0 Hedge | 1 One-Way Trend | 2 One-Way Counter
-    pub tp_t: i32, // 0 tanpa TP | 1 median % | 2 fixed % | 3 BarFix | 4 BarProf | 5 BarDir
-    pub tp_v: f64,
-    pub sl_t: i32, // 0 Next SR | 1 median % | 2 fixed % | 3 BarLoss | 4 MaxBar | 5 BarAdv
-    pub sl_v: f64,
-    pub use_tr: bool,
-    pub tr_u: i32, // 1 median % | 2 fixed %
-    pub tr_a: f64, // aktivasi trailing
-    pub tr_d: f64, // jarak trailing
-
-    pub book: Vec<Pos>,
-    pub trades: Vec<TradeRec>,
-    pub bal: f64,
-    pub peak_eq: f64,
-    pub peak_bal: f64,
-    pub dd_eq: f64,
-    pub dd_bal: f64,
-    pub liquid: bool,
-    pub liq_time: Option<i64>,
-    pub liq_bar: Option<usize>,
-    pub liq_px: Option<f64>,
-
-    pub n_long: i32,
-    pub n_short: i32,
-    pub n_win: i32,
-    pub n_loss: i32,
-    pub n_tp: i32,
-    pub n_bar_tp: i32,
-    pub n_stop: i32,
-    pub n_bar_sl: i32,
-    pub n_trail: i32,
-    pub n_next: i32,
-    pub n_skip: i32,
-
-    pub fees: f64,
-    pub gp: f64,
-    pub gl: f64,
-    pub max_vis_trades: usize,
-}
-
-impl Sim {
+impl VolStepEngine {
     pub fn new(
-        name: String,
-        key: String,
-        mode: i32,
-        tp_t: i32,
-        tp_v: f64,
-        sl_t: i32,
-        sl_v: f64,
-        use_tr: bool,
-        tr_u: i32,
-        tr_a: f64,
-        tr_d: f64,
-        init_cap: f64,
-        max_vis_trades: usize,
+        symbol: String,
+        line_mode: String,
+        vol_type: String,
+        length: usize,
+        vol_mult: f64,
+        stdev_bessel: bool,
     ) -> Self {
         Self {
-            name,
-            key,
-            mode,
-            tp_t,
-            tp_v,
-            sl_t,
-            sl_v,
-            use_tr,
-            tr_u,
-            tr_a,
-            tr_d,
-            book: Vec::with_capacity(20),
-            trades: Vec::with_capacity(max_vis_trades),
-            bal: init_cap,
-            peak_eq: init_cap,
-            peak_bal: init_cap,
-            dd_eq: 0.0,
-            dd_bal: 0.0,
-            liquid: false,
-            liq_time: None,
-            liq_bar: None,
-            liq_px: None,
-            n_long: 0,
-            n_short: 0,
-            n_win: 0,
-            n_loss: 0,
-            n_tp: 0,
-            n_bar_tp: 0,
-            n_stop: 0,
-            n_bar_sl: 0,
-            n_trail: 0,
-            n_next: 0,
-            n_skip: 0,
-            fees: 0.0,
-            gp: 0.0,
-            gl: 0.0,
-            max_vis_trades,
+            symbol: symbol.to_uppercase(),
+            line_mode,
+            vol_type,
+            length,
+            vol_mult,
+            stdev_bessel,
+            closed_closes: VecDeque::with_capacity(length),
+            tr_warmup: Vec::new(),
+            confirmed_rma: None,
+            prev_closed_close: None,
+            closed_bars_count: 0,
+            last_closed_open_time: -1,
+            price_decimals: 2,
+            confirmed_sr: None,
+            cur_level: None,
+            prev_level: None,
+            cur_pct: None,
+            cur_dir: None,
+            confirmed_vol_value: None,
+            sr_high: None,
+            sr_low: None,
+            hi_arr: Vec::new(),
+            lo_arr: Vec::new(),
+            live_open: None,
+            live_high: None,
+            live_low: None,
+            live_close: None,
+            tick_dir: 0,
+            candle_open_time: 0,
+            candle_close_time: 0,
+            pending_tick: None,
+            live_vol_value: None,
+            next_sr_active: false,
+            next_sr_dir: None,
+            next_sr_price: None,
+            next_sr_pct: None,
         }
     }
 
-    #[inline(always)]
-    pub fn is_bar_tp(&self) -> bool {
-        self.tp_t >= 3
+    pub fn detect_precision(&mut self, raw_str: &str) {
+        if let Some(pos) = raw_str.find('.') {
+            let trimmed = raw_str.trim_end_matches('0');
+            if let Some(pos2) = trimmed.find('.') {
+                let dec = trimmed[pos2 + 1..].len();
+                if dec > self.price_decimals {
+                    self.price_decimals = dec.min(8);
+                }
+            } else {
+                let dec = raw_str[pos + 1..].len();
+                if dec > self.price_decimals {
+                    self.price_decimals = dec.min(8);
+                }
+            }
+        }
     }
 
-    #[inline(always)]
-    pub fn is_bar_sl(&self) -> bool {
-        self.sl_t >= 3
+    pub fn fmt(&self, val: Option<f64>) -> String {
+        match val {
+            Some(v) => format!("{:.prec$}", v, prec = self.price_decimals),
+            None => "-".to_string(),
+        }
     }
 
-    #[inline(always)]
-    pub fn is_bar_any(&self) -> bool {
-        self.tp_t >= 3 || self.sl_t >= 3
+    fn calc_stdev_manual(&self, values: &[f64]) -> Option<f64> {
+        let n = values.len();
+        if n <= 1 {
+            return None;
+        }
+        let mean = values.iter().sum::<f64>() / (n as f64);
+        let divisor = if self.stdev_bessel { (n - 1) as f64 } else { n as f64 };
+        let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / divisor;
+        Some(variance.sqrt())
     }
 
-    #[inline(always)]
-    pub fn is_bar_both(&self) -> bool {
-        self.tp_t >= 3 && self.sl_t >= 3
+    fn calc_true_range(high: f64, low: f64, prev_close: Option<f64>) -> f64 {
+        match prev_close {
+            None => high - low,
+            Some(pc) => (high - low).max((high - pc).abs()).max((low - pc).abs()),
+        }
     }
 
-    #[inline(always)]
-    pub fn is_fixed_pct(&self) -> bool {
-        self.tp_t < 3 && self.sl_t < 3 && (self.tp_t == 2 || self.sl_t == 2 || (self.use_tr && self.tr_u == 2))
-    }
+    fn compute_volatility_closed(&mut self, high: f64, low: f64, close: f64) -> Option<f64> {
+        let tr = Self::calc_true_range(high, low, self.prev_closed_close);
+        self.prev_closed_close = Some(close);
 
-    #[inline(always)]
-    pub fn is_median_pct(&self) -> bool {
-        self.tp_t < 3 && self.sl_t < 3 && (self.tp_t == 1 || self.sl_t == 1 || (self.use_tr && self.tr_u == 1))
-    }
+        if self.closed_closes.len() == self.length {
+            self.closed_closes.pop_front();
+        }
+        self.closed_closes.push_back(close);
+        self.closed_bars_count += 1;
 
-    #[inline(always)]
-    pub fn is_pct_any(&self) -> bool {
-        self.tp_t < 3 && self.sl_t < 3 && (self.tp_t > 0 || self.sl_t > 0 || self.use_tr)
-    }
-
-    #[inline(always)]
-    pub fn category_badge(&self) -> &'static str {
-        if self.is_bar_both() {
-            "bar2"
-        } else if self.is_bar_tp() {
-            "btp"
-        } else if self.is_bar_sl() {
-            "bsl"
-        } else if self.is_fixed_pct() {
-            "fix"
-        } else if self.is_median_pct() {
-            "med"
+        if self.closed_bars_count < self.length {
+            self.tr_warmup.push(tr);
+            self.confirmed_rma = None;
+        } else if self.closed_bars_count == self.length {
+            self.tr_warmup.push(tr);
+            self.confirmed_rma = Some(self.tr_warmup.iter().sum::<f64>() / (self.length as f64));
         } else {
-            "neutral"
+            let prev_rma = self.confirmed_rma.unwrap_or(tr);
+            self.confirmed_rma = Some((tr + ((self.length - 1) as f64) * prev_rma) / (self.length as f64));
         }
-    }
 
-    #[inline(always)]
-    pub fn scan_at(&self, px: f64) -> (f64, f64) {
-        let mut f = 0.0;
-        let mut n = 0.0;
-        for p in &self.book {
-            f += (p.side as f64) * p.qty * (px - p.entry);
-            n += p.qty * px;
+        if self.closed_bars_count < self.length {
+            return None;
         }
-        (f, n)
-    }
 
-    #[inline(always)]
-    pub fn used_m(&self) -> f64 {
-        self.book.iter().map(|p| p.margin).sum()
-    }
-
-    pub fn close_at(
-        &mut self,
-        i: usize,
-        px: f64,
-        fee_pct: f64,
-        reason: i32,
-        why: &str,
-        _bar_idx: usize,
-        t_ms: i64,
-        c_px: f64,
-        sr_px: f64,
-    ) {
-        let p = self.book.remove(i);
-        let gross_pnl = (p.side as f64) * p.qty * (px - p.entry);
-        let fee_out = p.qty * px * fee_pct / 100.0;
-        
-        // Saldo bertambah grossPnl dikurangi feeOut (karena feeIn sudah dipotong dari saldo saat entry)
-        self.bal += gross_pnl - fee_out;
-        self.fees += fee_out;
-
-        // Net PnL bulat setelah fee 2 arah (Round-trip)
-        let net = gross_pnl - p.fee_in - fee_out;
-
-        if net > 0.0 {
-            self.n_win += 1;
-            self.gp += net;
+        let raw_vol = if self.vol_type == "Stdev" {
+            let closes: Vec<f64> = self.closed_closes.iter().copied().collect();
+            self.calc_stdev_manual(&closes)
         } else {
-            self.n_loss += 1;
-            self.gl += -net;
-        }
-
-        if reason == 1 {
-            self.n_tp += 1;
-        } else if reason == 5 {
-            self.n_tp += 1;
-            self.n_bar_tp += 1;
-        } else if reason == 2 {
-            self.n_stop += 1;
-        } else if reason == 6 {
-            self.n_stop += 1;
-            self.n_bar_sl += 1;
-        } else if reason == 3 {
-            self.n_stop += 1;
-            self.n_trail += 1;
-        } else {
-            self.n_next += 1;
-        }
-
-        let move_pct = (p.side as f64) * (px - p.entry) / p.entry * 100.0;
-
-        let dt_entry = DateTime::from_timestamp_millis(p.entry_time).unwrap_or_else(|| Utc::now());
-        let dt_exit = DateTime::from_timestamp_millis(t_ms).unwrap_or_else(|| Utc::now());
-
-        // Tampilkan persis harga aslinya tanpa dibulatkan
-        let rec = TradeRec {
-            side: if p.side == 1 { "BUY".to_string() } else { "SELL".to_string() },
-            entry_time: dt_entry.format("%Y-%m-%d %H:%M").to_string(),
-            entry_px: p.entry,
-            entry_px_str: format!("{}", p.entry),
-            entry_sr: p.entry_sr,
-            entry_sr_str: format!("{}", p.entry_sr),
-            tp_px: p.tp.map(|v| format!("{}", v)).unwrap_or_else(|| "-".to_string()),
-            sl_px: p.sl.map(|v| format!("{}", v)).unwrap_or_else(|| "NextSR".to_string()),
-            tp_desc: p.tp_desc,
-            sl_desc: p.sl_desc,
-            exit_time: dt_exit.format("%Y-%m-%d %H:%M").to_string(),
-            exit_px: px,
-            exit_px_str: format!("{}", px),
-            close_px: c_px,
-            close_px_str: format!("{}", c_px),
-            sr_px,
-            sr_px_str: format!("{}", sr_px),
-            why: why.to_string(),
-            move_pct: format!("{:+0.2}%", move_pct),
-            net_pnl: format!("{:+0.2} USDT", net),
-            pnl_color: if net >= 0.0 { "good".to_string() } else { "bad".to_string() },
+            self.confirmed_rma
         };
 
-        self.trades.push(rec);
-        if self.trades.len() > self.max_vis_trades {
-            self.trades.remove(0);
+        raw_vol.map(|v| v * self.vol_mult)
+    }
+
+    fn compute_volatility_live(&self, high: f64, low: f64, close: f64) -> Option<f64> {
+        if self.closed_bars_count < self.length - 1 {
+            return None;
+        }
+
+        let raw_vol = if self.vol_type == "Stdev" {
+            let mut window: Vec<f64> = self
+                .closed_closes
+                .iter()
+                .rev()
+                .take(self.length - 1)
+                .copied()
+                .collect();
+            window.reverse();
+            window.push(close);
+            if window.len() < self.length {
+                return None;
+            }
+            self.calc_stdev_manual(&window)
+        } else {
+            let live_tr = Self::calc_true_range(high, low, self.prev_closed_close);
+            if self.closed_bars_count == self.length - 1 {
+                Some((self.tr_warmup.iter().sum::<f64>() + live_tr) / (self.length as f64))
+            } else {
+                let prev_rma = self.confirmed_rma.unwrap_or(live_tr);
+                Some((live_tr + ((self.length - 1) as f64) * prev_rma) / (self.length as f64))
+            }
+        };
+
+        raw_vol.map(|v| v * self.vol_mult)
+    }
+
+    pub fn process_closed_candle(
+        &mut self,
+        _open_p: f64,
+        high_p: f64,
+        low_p: f64,
+        close_p: f64,
+        raw_close_str: Option<&str>,
+        open_time: Option<i64>,
+        close_time: Option<i64>,
+        interval_ms: Option<i64>,
+    ) -> bool {
+        if let Some(ot) = open_time {
+            if ot <= self.last_closed_open_time {
+                return false;
+            }
+            self.last_closed_open_time = ot;
+        }
+
+        if let Some(raw) = raw_close_str {
+            self.detect_precision(raw);
+        }
+
+        if self.confirmed_sr.is_none() {
+            self.confirmed_sr = Some(close_p);
+        }
+
+        let vol_value = self.compute_volatility_closed(high_p, low_p, close_p);
+        self.confirmed_vol_value = vol_value;
+
+        let active_sr = self.confirmed_sr.unwrap_or(close_p);
+        let new_level = if let Some(vol) = vol_value {
+            let step_level = if self.line_mode == "Anchor" {
+                close_p
+            } else {
+                let direction = if close_p > active_sr { 1.0 } else { -1.0 };
+                active_sr + direction * vol
+            };
+
+            if (close_p - active_sr).abs() > vol {
+                step_level
+            } else {
+                active_sr
+            }
+        } else {
+            active_sr
+        };
+
+        self.confirmed_sr = Some(new_level);
+        let updated_sr = new_level;
+
+        let is_price_step = match self.cur_level {
+            None => true,
+            Some(curr) => (updated_sr - curr).abs() > f64::EPSILON,
+        };
+
+        if is_price_step {
+            if let (Some(h), Some(l), Some(lvl)) = (self.sr_high, self.sr_low, self.cur_level) {
+                if lvl > 0.0 {
+                    self.hi_arr.push(((h - lvl) / lvl * 100.0).max(0.0));
+                    self.lo_arr.push(((lvl - l) / lvl * 100.0).max(0.0));
+                }
+            }
+
+            if self.cur_level.is_some() {
+                self.prev_level = self.cur_level;
+            }
+            self.cur_level = Some(updated_sr);
+            self.sr_high = None;
+            self.sr_low = None;
+
+            if let Some(prev) = self.prev_level {
+                if prev != 0.0 {
+                    let pct = ((updated_sr - prev) / prev) * 100.0;
+                    self.cur_pct = Some(pct);
+                    self.cur_dir = Some(if pct >= 0.0 { "BULL".to_string() } else { "BEAR".to_string() });
+                } else {
+                    self.cur_pct = None;
+                    self.cur_dir = None;
+                }
+            } else {
+                self.cur_pct = None;
+                self.cur_dir = None;
+            }
+        } else {
+            self.sr_high = Some(match self.sr_high {
+                Some(h) => h.max(high_p),
+                None => high_p,
+            });
+            self.sr_low = Some(match self.sr_low {
+                Some(l) => l.min(low_p),
+                None => low_p,
+            });
+        }
+
+        self.next_sr_active = false;
+        self.next_sr_dir = None;
+        self.next_sr_price = None;
+        self.next_sr_pct = None;
+
+        if let (Some(ct), Some(ims)) = (close_time, interval_ms) {
+            let next_open = ct + 1;
+            let next_close = ct + ims;
+            self.candle_open_time = next_open;
+            self.candle_close_time = next_close;
+            self.live_open = Some(close_p);
+            self.live_high = Some(close_p);
+            self.live_low = Some(close_p);
+            self.live_close = Some(close_p);
+
+            if let Some((p_px, p_raw, p_ts)) = self.pending_tick.take() {
+                if p_ts >= next_open {
+                    self.update_live_tick(p_px, None, None, None, None, None, p_raw.as_deref(), Some(p_ts));
+                }
+            }
+        }
+
+        is_price_step
+    }
+
+    fn evaluate_live_sr(&mut self) {
+        let (lh, ll, lc) = match (self.live_high, self.live_low, self.live_close) {
+            (Some(h), Some(l), Some(c)) => (h, l, c),
+            _ => return,
+        };
+
+        let vol_value = self.compute_volatility_live(lh, ll, lc);
+        self.live_vol_value = vol_value;
+
+        let conf_sr = match self.confirmed_sr {
+            Some(s) => s,
+            None => {
+                self.next_sr_active = false;
+                return;
+            }
+        };
+
+        if let Some(vol) = vol_value {
+            let diff = lc - conf_sr;
+            if diff.abs() > vol {
+                self.next_sr_active = true;
+                self.next_sr_dir = Some(if diff > 0.0 { "BULL".to_string() } else { "BEAR".to_string() });
+                let next_p = if self.line_mode == "Anchor" {
+                    lc
+                } else {
+                    let dir = if diff > 0.0 { 1.0 } else { -1.0 };
+                    conf_sr + dir * vol
+                };
+                self.next_sr_price = Some(next_p);
+                self.next_sr_pct = if conf_sr != 0.0 {
+                    Some(((next_p - conf_sr) / conf_sr) * 100.0)
+                } else {
+                    Some(0.0)
+                };
+            } else {
+                self.next_sr_active = false;
+                self.next_sr_dir = None;
+                self.next_sr_price = None;
+                self.next_sr_pct = None;
+            }
+        } else {
+            self.next_sr_active = false;
         }
     }
 
-    pub fn process_bar(
+    pub fn update_live_tick(
         &mut self,
-        new_sr: bool,
-        sr_px: f64,
-        prev_sr: Option<f64>,
-        med_h: f64,
-        med_l: f64,
-        n_samp: usize,
-        in_win: bool,
-        bar_idx: usize,
-        t_ms: i64,
-        o_px: f64,
-        h_px: f64,
-        l_px: f64,
-        c_px: f64,
-        init_cap: f64,
-        margin_pct: f64,
-        margin_basis: &str,
-        leverage: i32,
-        fee_entry: f64,
-        fee_exit: f64,
-        mmr_pct: f64,
-        max_open: usize,
-        min_levels: usize,
-        one_way_rule: &str,
+        price: f64,
+        high_p: Option<f64>,
+        low_p: Option<f64>,
+        open_p: Option<f64>,
+        open_time: Option<i64>,
+        close_time: Option<i64>,
+        raw_price_str: Option<&str>,
+        trade_time: Option<i64>,
     ) {
-        if self.liquid {
+        if let Some(raw) = raw_price_str {
+            self.detect_precision(raw);
+        }
+
+        if let Some(tt) = trade_time {
+            if self.candle_close_time > 0 && tt > self.candle_close_time {
+                self.pending_tick = Some((price, raw_price_str.map(|s| s.to_string()), tt));
+                return;
+            }
+        }
+
+        if let Some(ot) = open_time {
+            if ot <= self.last_closed_open_time {
+                return;
+            }
+            if ot > self.candle_open_time {
+                self.candle_open_time = ot;
+                if let Some(ct) = close_time {
+                    self.candle_close_time = ct;
+                }
+                self.live_open = Some(open_p.unwrap_or(price));
+                self.live_high = Some(high_p.unwrap_or(price));
+                self.live_low = Some(low_p.unwrap_or(price));
+            } else {
+                if let Some(ct) = close_time {
+                    self.candle_close_time = ct;
+                }
+                if let Some(op) = open_p {
+                    self.live_open = Some(op);
+                }
+                if let Some(hp) = high_p {
+                    self.live_high = Some(match self.live_high {
+                        Some(curr_h) => curr_h.max(hp),
+                        None => hp,
+                    });
+                }
+                if let Some(lp) = low_p {
+                    self.live_low = Some(match self.live_low {
+                        Some(curr_l) => curr_l.min(lp),
+                        None => lp,
+                    });
+                }
+            }
+        } else {
+            if self.live_open.is_none() {
+                self.live_open = Some(price);
+            }
+            self.live_high = Some(match self.live_high {
+                Some(curr_h) => curr_h.max(price),
+                None => price,
+            });
+            self.live_low = Some(match self.live_low {
+                Some(curr_l) => curr_l.min(price),
+                None => price,
+            });
+        }
+
+        if let Some(prev_close) = self.live_close {
+            if (price - prev_close).abs() > f64::EPSILON {
+                self.tick_dir = if price > prev_close { 1 } else { -1 };
+            }
+        }
+        self.live_close = Some(price);
+
+        self.evaluate_live_sr();
+    }
+
+    pub fn get_median_excursion(&self) -> (Option<f64>, Option<f64>) {
+        let mut med_h = None;
+        let mut med_l = None;
+
+        if !self.hi_arr.is_empty() {
+            let mut s = self.hi_arr.clone();
+            s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = s.len() / 2;
+            med_h = Some(if s.len() % 2 != 0 {
+                s[mid]
+            } else {
+                (s[mid - 1] + s[mid]) / 2.0
+            });
+        }
+
+        if !self.lo_arr.is_empty() {
+            let mut s = self.lo_arr.clone();
+            s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = s.len() / 2;
+            med_l = Some(if s.len() % 2 != 0 {
+                s[mid]
+            } else {
+                (s[mid - 1] + s[mid]) / 2.0
+            });
+        }
+
+        (med_h, med_l)
+    }
+}
+
+// =====================================================================
+// BOT MANAGER
+// =====================================================================
+#[derive(Debug, Clone)]
+pub struct EffectiveStrategy {
+    pub mode: String,
+    pub tp_type: String,
+    pub tp_val: f64,
+    pub sl_type: String,
+    pub sl_val: f64,
+    pub use_trailing: bool,
+    pub trailing_mode: String,
+    pub trail_type: String,
+    pub trail_act: f64,
+    pub trail_dist: f64,
+    pub min_levels_median: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingSnipingOrder {
+    pub order_id: i64,
+    pub side: String,
+    pub qty: f64,
+    pub price: f64,
+    pub time: f64,
+}
+
+#[derive(Clone)]
+pub struct BotManager {
+    pub config_path: String,
+    pub config: Arc<RwLock<BotConfig>>,
+    pub client: BinanceFuturesClient,
+    pub engines: Arc<RwLock<HashMap<String, VolStepEngine>>>,
+    pub is_running: Arc<AtomicBool>,
+    pub status: Arc<RwLock<String>>,
+    pub status_message: Arc<RwLock<String>>,
+    pub logs: Arc<RwLock<VecDeque<LogEntry>>>,
+    pub active_positions: Arc<RwLock<HashMap<String, PositionInfo>>>,
+    pub trade_history: Arc<RwLock<VecDeque<TradeRecord>>>,
+    pub last_entered_candle: Arc<RwLock<HashMap<String, i64>>>,
+    pub pending_sniping_orders: Arc<RwLock<HashMap<String, PendingSnipingOrder>>>,
+    pub last_top_symbols: Arc<RwLock<HashSet<String>>>,
+    pub ws_restart_notify: Arc<tokio::sync::Notify>,
+}
+
+impl BotManager {
+    pub fn new(config_path: &str) -> Self {
+        let mut cfg = BotConfig::default();
+        if let Ok(content) = std::fs::read_to_string(config_path) {
+            if let Ok(parsed) = serde_json::from_str::<BotConfig>(&content) {
+                cfg = parsed;
+            }
+        }
+
+        let client = BinanceFuturesClient::new(
+            cfg.api_key.clone(),
+            cfg.secret_key.clone(),
+            cfg.use_testnet,
+        );
+
+        Self {
+            config_path: config_path.to_string(),
+            config: Arc::new(RwLock::new(cfg)),
+            client,
+            engines: Arc::new(RwLock::new(HashMap::new())),
+            is_running: Arc::new(AtomicBool::new(false)),
+            status: Arc::new(RwLock::new("STOPPED".to_string())),
+            status_message: Arc::new(RwLock::new("Ready".to_string())),
+            logs: Arc::new(RwLock::new(VecDeque::with_capacity(200))),
+            active_positions: Arc::new(RwLock::new(HashMap::new())),
+            trade_history: Arc::new(RwLock::new(VecDeque::with_capacity(100))),
+            last_entered_candle: Arc::new(RwLock::new(HashMap::new())),
+            pending_sniping_orders: Arc::new(RwLock::new(HashMap::new())),
+            last_top_symbols: Arc::new(RwLock::new(HashSet::new())),
+            ws_restart_notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    pub async fn log(&self, text: &str, level: &str) {
+        let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+        let entry = LogEntry {
+            time: ts.clone(),
+            level: level.to_string(),
+            text: text.to_string(),
+        };
+        println!("[{}] [{}] {}", ts, level, text);
+        let mut logs = self.logs.write().await;
+        if logs.len() >= 200 {
+            logs.pop_front();
+        }
+        logs.push_back(entry);
+    }
+
+    pub async fn load_config(&self) {
+        if let Ok(content) = std::fs::read_to_string(&self.config_path) {
+            if let Ok(parsed) = serde_json::from_str::<BotConfig>(&content) {
+                *self.config.write().await = parsed;
+            }
+        }
+    }
+
+    pub async fn save_config(&self, new_cfg: BotConfig) {
+        *self.config.write().await = new_cfg.clone();
+        if let Ok(json_str) = serde_json::to_string_pretty(&new_cfg) {
+            let _ = std::fs::write(&self.config_path, json_str);
+        }
+        self.client
+            .update_keys(new_cfg.api_key, new_cfg.secret_key, new_cfg.use_testnet)
+            .await;
+    }
+
+    pub async fn get_effective_strategy(&self, _symbol: &str) -> EffectiveStrategy {
+        let cfg = self.config.read().await.clone();
+        let p_opt = find_preset(&cfg.selected_preset);
+
+        let mut mode = cfg.strategy_mode.clone();
+        let mut tp_type = cfg.tp_type.clone();
+        let mut tp_val = cfg.tp_val;
+        let mut sl_type = cfg.sl_type.clone();
+        let mut sl_val = cfg.sl_val;
+        let mut use_trailing = cfg.use_trailing;
+        let mut trail_type = "Fixed %".to_string();
+        let mut trail_act = cfg.trail_act;
+        let mut trail_dist = cfg.trail_dist;
+        let trailing_mode = cfg.trailing_mode.clone();
+        let min_sr = cfg.min_levels_median;
+
+        if let Some(p) = p_opt {
+            mode = p.mode;
+            tp_type = p.tp_type.clone();
+            sl_type = p.sl_type.clone();
+            use_trailing = p.use_trail;
+
+            if tp_type == "Median %" {
+                tp_val = p.tp_mult.unwrap_or(1.0);
+            } else if tp_type == "Fixed %" {
+                tp_val = match p.tp_val_key.as_deref() {
+                    Some("fixed1") => cfg.fixed1,
+                    Some("fixed2") => cfg.fixed2,
+                    Some("fixed3") => cfg.fixed3,
+                    _ => cfg.fixed1,
+                };
+            } else if tp_type == "BarFix" || tp_type == "BarProf" || tp_type == "BarDir" {
+                tp_val = match p.tp_bar_key.as_deref() {
+                    Some("bar_tp_1") => cfg.bar_tp1 as f64,
+                    Some("bar_tp_2") => cfg.bar_tp2 as f64,
+                    Some("bar_tp_dir") => cfg.bar_tp_dir as f64,
+                    _ => cfg.bar_tp1 as f64,
+                };
+            }
+
+            if sl_type == "Median %" {
+                sl_val = p.sl_mult.unwrap_or(1.0);
+            } else if sl_type == "Fixed %" {
+                sl_val = match p.sl_val_key.as_deref() {
+                    Some("fixed1") => cfg.fixed1,
+                    Some("fixed2") => cfg.fixed2,
+                    Some("fixed3") => cfg.fixed3,
+                    _ => cfg.fixed1,
+                };
+            } else if sl_type == "BarLoss" || sl_type == "MaxBar" || sl_type == "BarAdv" {
+                sl_val = match p.sl_bar_key.as_deref() {
+                    Some("bar_sl_1") => cfg.sl_bar1 as f64,
+                    Some("bar_sl_2") => cfg.sl_bar2 as f64,
+                    Some("bar_sl_adv") => cfg.sl_bar_adv as f64,
+                    _ => cfg.sl_bar1 as f64,
+                };
+            }
+
+            if use_trailing {
+                trail_type = p.trail_type.unwrap_or_else(|| "Median %".to_string());
+                if trail_type == "Median %" {
+                    trail_act = p.trail_act_mult.unwrap_or(1.0);
+                    trail_dist = p.trail_dist_mult.unwrap_or(0.5);
+                } else {
+                    trail_act = match p.trail_act_key.as_deref() {
+                        Some("fixed1") => cfg.fixed1,
+                        Some("fixed2") => cfg.fixed2,
+                        Some("fixed3") => cfg.fixed3,
+                        _ => cfg.fixed2,
+                    };
+                    trail_dist = match p.trail_dist_key.as_deref() {
+                        Some("fixed1") => cfg.fixed1,
+                        Some("fixed2") => cfg.fixed2,
+                        Some("fixed3") => cfg.fixed3,
+                        _ => cfg.fixed1,
+                    };
+                }
+            }
+        }
+
+        EffectiveStrategy {
+            mode,
+            tp_type,
+            tp_val,
+            sl_type,
+            sl_val,
+            use_trailing,
+            trailing_mode,
+            trail_type,
+            trail_act,
+            trail_dist,
+            min_levels_median: min_sr,
+        }
+    }
+
+    pub async fn get_effective_leverage(&self, symbol: &str) -> u32 {
+        let cfg = self.config.read().await;
+        let max_lev = self.client.get_max_leverage(symbol).await;
+        if cfg.leverage_mode == "Auto Max Leverage" {
+            max_lev
+        } else {
+            cfg.leverage.min(max_lev)
+        }
+    }
+
+    pub async fn resolve_active_symbols(&self) -> Vec<String> {
+        let cfg = self.config.read().await.clone();
+        if cfg.coin_source_mode == "Manual" {
+            return cfg.symbols.iter().map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()).collect();
+        }
+
+        let tickers = self.client.get_ticker_24hr().await;
+        if tickers.is_empty() {
+            self.log("Ticker 24hr kosong, fallback ke simbol manual", "WARN").await;
+            return cfg.symbols.iter().map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()).collect();
+        }
+
+        let is_testnet = *self.client.use_testnet.read().await;
+        let sym_info = self.client.symbols_info.read().await;
+
+        struct TickerItem {
+            symbol: String,
+            quote_vol: f64,
+            pct_change: f64,
+        }
+
+        let mut valid_tickers: Vec<TickerItem> = Vec::new();
+
+        for t in tickers {
+            let sym = t.get("symbol").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            if !sym.ends_with("USDT") { continue; }
+            if is_testnet && !sym_info.contains_key(&sym.to_uppercase()) {
+                continue;
+            }
+
+            let q_vol = t.get("quoteVolume").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+            let p_chg = t.get("priceChangePercent").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+
+            if q_vol >= cfg.min_24h_volume_usdt {
+                valid_tickers.push(TickerItem {
+                    symbol: sym,
+                    quote_vol: q_vol,
+                    pct_change: p_chg,
+                });
+            }
+        }
+
+        if cfg.coin_source_mode == "Top Gainers" {
+            valid_tickers.sort_by(|a, b| b.pct_change.partial_cmp(&a.pct_change).unwrap_or(std::cmp::Ordering::Equal));
+        } else if cfg.coin_source_mode == "Top Losers" {
+            valid_tickers.sort_by(|a, b| a.pct_change.partial_cmp(&b.pct_change).unwrap_or(std::cmp::Ordering::Equal));
+        } else if cfg.coin_source_mode == "Top Volume" {
+            valid_tickers.sort_by(|a, b| b.quote_vol.partial_cmp(&a.quote_vol).unwrap_or(std::cmp::Ordering::Equal));
+        }
+
+        let selected: Vec<String> = valid_tickers
+            .into_iter()
+            .take(cfg.max_screener_coins)
+            .map(|x| x.symbol.to_uppercase())
+            .collect();
+
+        if !selected.is_empty() {
+            self.log(
+                &format!("Screener ({}): Terpilih {} koin -> {}", cfg.coin_source_mode, selected.len(), selected.join(", ")),
+                "INFO",
+            ).await;
+            return selected;
+        }
+
+        cfg.symbols.iter().map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()).collect()
+    }
+
+    pub async fn restart_websocket(&self) {
+        self.ws_restart_notify.notify_waiters();
+    }
+
+    pub async fn init_engines(&self) {
+        let symbols = self.resolve_active_symbols().await;
+        *self.last_top_symbols.write().await = symbols.iter().cloned().collect();
+
+        let cfg = self.config.read().await.clone();
+        let mut map = self.engines.write().await;
+        map.clear();
+        for s in symbols {
+            map.insert(
+                s.clone(),
+                VolStepEngine::new(
+                    s,
+                    cfg.line_mode.clone(),
+                    cfg.vol_type.clone(),
+                    cfg.lookback,
+                    cfg.vol_mult,
+                    cfg.stdev_bessel,
+                ),
+            );
+        }
+    }
+
+    pub async fn warmup_single_symbol(&self, sym: &str, limit: usize, interval: &str) {
+        let interval_ms = get_interval_ms(interval);
+        if let Ok(klines) = self.client.fetch_klines(sym, interval, limit).await {
+            let now_ms = self.client.get_server_time_ms().await;
+            let mut engines = self.engines.write().await;
+            if let Some(eng) = engines.get_mut(sym) {
+                let n = klines.len();
+                if n > 1 {
+                    for k in &klines[..n - 1] {
+                        if let (Some(ot), Some(o), Some(h), Some(l), Some(c), Some(ct)) = (
+                            k.get(0).and_then(|x| x.as_i64()),
+                            k.get(1).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            k.get(2).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            k.get(3).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            k.get(4).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            k.get(6).and_then(|x| x.as_i64()),
+                        ) {
+                            let raw_c = k.get(4).and_then(|x| x.as_str());
+                            eng.process_closed_candle(o, h, l, c, raw_c, Some(ot), Some(ct), Some(interval_ms));
+                        }
+                    }
+
+                    if let Some(last_k) = klines.last() {
+                        if let (Some(ot), Some(o), Some(h), Some(l), Some(c), Some(ct)) = (
+                            last_k.get(0).and_then(|x| x.as_i64()),
+                            last_k.get(1).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            last_k.get(2).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            last_k.get(3).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            last_k.get(4).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()),
+                            last_k.get(6).and_then(|x| x.as_i64()),
+                        ) {
+                            let raw_c = last_k.get(4).and_then(|x| x.as_str());
+                            if ct <= now_ms {
+                                eng.process_closed_candle(o, h, l, c, raw_c, Some(ot), Some(ct), Some(interval_ms));
+                            } else {
+                                eng.update_live_tick(c, Some(h), Some(l), Some(o), Some(ot), Some(ct), raw_c, None);
+                            }
+                        }
+                    }
+                }
+                self.log(&format!("Selesai warmup {}: {} bars", sym, n), "INFO").await;
+            }
+        }
+    }
+
+    pub async fn warmup_all(&self) {
+        *self.status.write().await = "WARMING_UP".to_string();
+        let syms: Vec<String> = self.engines.read().await.keys().cloned().collect();
+        let (interval, limit, delay) = {
+            let cfg = self.config.read().await;
+            (cfg.timeframe.clone(), cfg.warmup_limit, cfg.warmup_delay)
+        };
+
+        self.log(
+            &format!("Memulai warmup {} klines ({}) untuk {} koin dari Live Binance...", limit, interval, syms.len()),
+            "INFO",
+        ).await;
+
+        for sym in syms {
+            if !self.is_running.load(Ordering::SeqCst) {
+                return;
+            }
+            self.warmup_single_symbol(&sym, limit, &interval).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis((delay * 1000.0) as u64)).await;
+        }
+
+        self.sync_active_positions_from_exchange().await;
+        self.sync_trades_from_exchange().await;
+        *self.status.write().await = "RUNNING".to_string();
+        self.log("Selesai warmup. Live Stream & Screener Aktif!", "INFO").await;
+    }
+
+    pub async fn sync_active_positions_from_exchange(&self) {
+        let risks = self.client.get_position_risk(None).await;
+        let mut active_symbols = HashSet::new();
+
+        let mut positions = self.active_positions.write().await;
+        let engines = self.engines.read().await;
+
+        for r in risks {
+            let sym = r.get("symbol").and_then(|x| x.as_str()).unwrap_or("").to_uppercase();
+            let amt = r.get("positionAmt").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+
+            if amt.abs() > 0.0 && engines.contains_key(&sym) {
+                active_symbols.insert(sym.clone());
+                let side = if amt > 0.0 { "BUY".to_string() } else { "SELL".to_string() };
+                let entry_px = r.get("entryPrice").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                let unpnl = r.get("unRealizedProfit").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+
+                if let Some(pos) = positions.get_mut(&sym) {
+                    pos.unrealized_pnl = unpnl;
+                    pos.entry = entry_px;
+                    pos.qty = amt.abs();
+                } else {
+                    positions.insert(sym.clone(), PositionInfo {
+                        side,
+                        entry: entry_px,
+                        qty: amt.abs(),
+                        bars_held: 0,
+                        dir_cnt: 0,
+                        adv_cnt: 0,
+                        unrealized_pnl: unpnl,
+                        highest_px: entry_px,
+                        lowest_px: entry_px,
+                        trail_stop: None,
+                        trail_active: false,
+                        candle_time: 0,
+                        algo_trailing_id: None,
+                    });
+                }
+            }
+        }
+        drop(engines);
+
+        let to_remove: Vec<String> = positions
+            .keys()
+            .filter(|k| !active_symbols.contains(*k))
+            .cloned()
+            .collect();
+
+        for s in to_remove {
+            if let Some(pos_info) = positions.remove(&s) {
+                if let Some(aid) = pos_info.algo_trailing_id {
+                    let _ = self.client.cancel_algo_order(aid).await;
+                }
+            }
+            let _ = self.client.cancel_all_algo_orders(&s).await;
+
+            let (mode, last_tops) = {
+                (
+                    self.config.read().await.coin_source_mode.clone(),
+                    self.last_top_symbols.read().await.clone(),
+                )
+            };
+            if mode != "Manual" && !last_tops.contains(&s) {
+                self.engines.write().await.remove(&s);
+                self.restart_websocket().await;
+            }
+        }
+    }
+
+    pub async fn sync_trades_from_exchange(&self) {
+        let syms: Vec<String> = self.engines.read().await.keys().cloned().collect();
+        let mut all_trades = Vec::new();
+
+        for sym in syms {
+            let raw = self.client.get_user_trades(&sym, 20).await;
+            for t in raw {
+                let ts = t.get("time").and_then(|x| x.as_i64()).unwrap_or(0);
+                let dt_str = chrono::DateTime::from_timestamp_millis(ts)
+                    .map(|d| d.format("%H:%M:%S").to_string())
+                    .unwrap_or_else(|| "--:--:--".to_string());
+                let buyer = t.get("buyer").and_then(|x| x.as_bool()).unwrap_or(false);
+                let side = if buyer { "BUY" } else { "SELL" };
+                let pnl = t.get("realizedPnl").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                let px = t.get("price").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                let qty = t.get("qty").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+
+                all_trades.push(TradeRecord {
+                    id: t.get("id").cloned(),
+                    symbol: sym.clone(),
+                    side: side.to_string(),
+                    entry: px,
+                    exit: px,
+                    price: px,
+                    qty,
+                    pnl: (pnl * 100.0).round() / 100.0,
+                    pct: 0.0,
+                    reason: if pnl == 0.0 { "BINANCE TRADE".to_string() } else { "REALIZED PNL".to_string() },
+                    time: dt_str,
+                    raw_time: ts,
+                });
+            }
+        }
+
+        all_trades.sort_by(|a, b| b.raw_time.cmp(&a.raw_time));
+        if !all_trades.is_empty() {
+            let mut hist = self.trade_history.write().await;
+            hist.clear();
+            for item in all_trades.into_iter().take(50) {
+                hist.push_back(item);
+            }
+        }
+    }
+
+    pub async fn calculate_order_qty(&self, symbol: &str, price: f64) -> f64 {
+        let (margin_pct, leverage) = {
+            let cfg = self.config.read().await;
+            (cfg.margin_pct, self.get_effective_leverage(symbol).await)
+        };
+
+        let wallet_bal = match self.client.get_balance_summary().await {
+            Ok(b) => if b.wallet_balance > 0.0 { b.wallet_balance } else { b.available_balance.max(1000.0) },
+            Err(_) => 1000.0,
+        };
+
+        let margin_amount = wallet_bal * (margin_pct / 100.0);
+        let notional = margin_amount * (leverage as f64);
+        let raw_qty = if price > 0.0 { notional / price } else { 0.0 };
+        let qty = self.client.round_qty(symbol, raw_qty).await;
+
+        let info_map = self.client.symbols_info.read().await;
+        let min_qty = info_map.get(&symbol.to_uppercase()).map(|x| x.min_qty).unwrap_or(0.001);
+
+        qty.max(min_qty)
+    }
+
+    pub async fn execute_entry(&self, symbol: &str, signal_dir: &str, current_price: f64, candle_time: i64) {
+        {
+            let last_c = self.last_entered_candle.read().await;
+            if let Some(&c_time) = last_c.get(symbol) {
+                if c_time == candle_time {
+                    return;
+                }
+            }
+        }
+
+        let strat = self.get_effective_strategy(symbol).await;
+        let target_side = if strat.mode == "One-Way Trend" {
+            if signal_dir == "BULL" { "BUY" } else { "SELL" }
+        } else {
+            if signal_dir == "BULL" { "SELL" } else { "BUY" }
+        };
+
+        {
+            let engines = self.engines.read().await;
+            if let Some(eng) = engines.get(symbol) {
+                let need_med = (strat.tp_type == "Median %") || (strat.sl_type == "Median %") || (strat.use_trailing && strat.trail_type == "Median %");
+                if need_med && eng.hi_arr.len() < strat.min_levels_median {
+                    self.log(
+                        &format!("[{}] Entry ditahan: Memerlukan min {} SR selesai untuk Median % (saat ini {}).", symbol, strat.min_levels_median, eng.hi_arr.len()),
+                        "WARN",
+                    ).await;
+                    return;
+                }
+            }
+        }
+
+        let (one_way_rule, max_open) = {
+            let cfg = self.config.read().await;
+            (cfg.one_way_rule.clone(), cfg.max_open_positions)
+        };
+
+        let has_pos = self.active_positions.read().await.contains_key(symbol);
+
+        if !has_pos {
+            let cur_open = self.active_positions.read().await.len();
+            if cur_open >= max_open {
+                self.log(
+                    &format!("[{}] Entry ditahan: Kuota posisi terbuka penuh ({}/{} posisi aktif).", symbol, cur_open, max_open),
+                    "WARN",
+                ).await;
+                return;
+            }
+        } else {
+            let cur_side = self.active_positions.read().await.get(symbol).map(|x| x.side.clone()).unwrap_or_default();
+            if one_way_rule == "Tahan Posisi Lama (Skip SR Baru Jika Masih Open)" {
+                self.log(&format!("[{}] Sinyal {} ({}), di-SKIP (Tahan Posisi Lama).", symbol, signal_dir, target_side), "INFO").await;
+                return;
+            } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
+                if cur_side == target_side {
+                    self.log(&format!("[{}] Sinyal {} ({}) searah dengan posisi aktif. SKIP.", symbol, signal_dir, target_side), "INFO").await;
+                    return;
+                } else {
+                    self.log(&format!("[{}] REVERSE: Tutup {} untuk ganti ke {}...", symbol, cur_side, target_side), "INFO").await;
+                    self.close_active_position(symbol, "REV SR").await;
+                }
+            } else if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
+                self.log(&format!("[{}] Tutup posisi lama {} untuk buka baru di SR baru...", symbol, cur_side), "INFO").await;
+                self.close_active_position(symbol, "NEXT SR").await;
+            }
+        }
+
+        let leverage = self.get_effective_leverage(symbol).await;
+        let max_bursa = self.client.get_max_leverage(symbol).await;
+        let _ = self.client.set_leverage(symbol, leverage).await;
+        self.log(&format!("[{}] Leverage disetel ke {}x (Max bursa: {}x).", symbol, leverage, max_bursa), "INFO").await;
+
+        let qty = self.calculate_order_qty(symbol, current_price).await;
+        let entry_mode = self.config.read().await.entry_mode.clone();
+
+        self.log(&format!("⚡ [{}] Membuka ENTRY {} {} @ ~{} ({})...", symbol, target_side, qty, current_price, entry_mode), "INFO").await;
+
+        if entry_mode.contains("Limit") {
+            match self.client.place_order(symbol, target_side, "LIMIT", qty, Some(current_price), None, Some("GTX"), false).await {
+                Ok(res) => {
+                    if let Some(oid) = res.get("orderId").and_then(|x| x.as_i64()) {
+                        self.pending_sniping_orders.write().await.insert(symbol.to_string(), PendingSnipingOrder {
+                            order_id: oid,
+                            side: target_side.to_string(),
+                            qty,
+                            price: current_price,
+                            time: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                        });
+                        self.last_entered_candle.write().await.insert(symbol.to_string(), candle_time);
+                        self.log(&format!("[{}] Limit Post-Only dipasang (ID: {}).", symbol, oid), "INFO").await;
+                    }
+                }
+                Err(e) => self.log(&format!("Gagal order {}: {}", symbol, e), "ERROR").await,
+            }
+        } else {
+            match self.client.place_order(symbol, target_side, "MARKET", qty, None, None, None, false).await {
+                Ok(res) => {
+                    let fill_px = res.get("avgPrice").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(current_price);
+                    let actual_px = if fill_px > 0.0 { fill_px } else { current_price };
+
+                    self.active_positions.write().await.insert(symbol.to_string(), PositionInfo {
+                        side: target_side.to_string(),
+                        entry: actual_px,
+                        qty,
+                        bars_held: 0,
+                        dir_cnt: 0,
+                        adv_cnt: 0,
+                        unrealized_pnl: 0.0,
+                        highest_px: actual_px,
+                        lowest_px: actual_px,
+                        trail_stop: None,
+                        trail_active: false,
+                        candle_time,
+                        algo_trailing_id: None,
+                    });
+                    self.last_entered_candle.write().await.insert(symbol.to_string(), candle_time);
+                    self.log(&format!("✅ [{}] Berhasil ENTRY {} {} @ {}!", symbol, target_side, qty, actual_px), "INFO").await;
+
+                    if strat.use_trailing && strat.trailing_mode == "Binance Endpoint" {
+                        self.setup_binance_trailing_stop(symbol, target_side, qty, actual_px, &strat).await;
+                    }
+                }
+                Err(e) => self.log(&format!("Gagal order {}: {}", symbol, e), "ERROR").await,
+            }
+        }
+    }
+
+    pub async fn setup_binance_trailing_stop(
+        &self,
+        symbol: &str,
+        pos_side: &str,
+        qty: f64,
+        entry_price: f64,
+        strat: &EffectiveStrategy,
+    ) {
+        let close_side = if pos_side == "BUY" { "SELL" } else { "BUY" };
+        let act_price = if pos_side == "BUY" {
+            entry_price * (1.0 + strat.trail_act / 100.0)
+        } else {
+            entry_price * (1.0 - strat.trail_act / 100.0)
+        };
+
+        match self.client.place_trailing_stop_algo(
+            symbol,
+            close_side,
+            qty,
+            strat.trail_dist,
+            Some(act_price),
+            true,
+        ).await {
+            Ok(res) => {
+                let aid = res.get("algoId").and_then(|x| x.as_i64());
+                if let Some(pos) = self.active_positions.write().await.get_mut(symbol) {
+                    pos.algo_trailing_id = aid;
+                }
+                self.log(
+                    &format!("⚡ [{}] Binance Endpoint Trailing dipasang (Algo ID: {:?}, Callback: {}%, Act: ~{:.2}).", symbol, aid, strat.trail_dist, act_price),
+                    "INFO",
+                ).await;
+            }
+            Err(e) => {
+                self.log(
+                    &format!("[{}] Gagal pasang Binance Trailing Stop: {} (Fallback ke Local).", symbol, e),
+                    "WARN",
+                ).await;
+            }
+        }
+    }
+
+    pub async fn close_active_position(&self, symbol: &str, reason: &str) {
+        let pos = match self.active_positions.read().await.get(symbol).cloned() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let close_side = if pos.side == "BUY" { "SELL" } else { "BUY" };
+        self.log(&format!("🛑 [{}] Menutup Posisi {} {} ({})...", symbol, pos.side, pos.qty, reason), "INFO").await;
+
+        match self.client.place_order(symbol, close_side, "MARKET", pos.qty, None, None, None, true).await {
+            Ok(res) => {
+                let exit_px_raw = res.get("avgPrice").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                let exit_px = if exit_px_raw > 0.0 {
+                    exit_px_raw
+                } else {
+                    self.engines.read().await.get(symbol).and_then(|e| e.live_close).unwrap_or(pos.entry)
+                };
+
+                let pnl = if pos.side == "BUY" { (exit_px - pos.entry) * pos.qty } else { (pos.entry - exit_px) * pos.qty };
+                let pct = if pos.entry > 0.0 {
+                    if pos.side == "BUY" { (exit_px - pos.entry) / pos.entry * 100.0 } else { (pos.entry - exit_px) / pos.entry * 100.0 }
+                } else {
+                    0.0
+                };
+
+                let rec = TradeRecord {
+                    id: None,
+                    symbol: symbol.to_string(),
+                    side: pos.side.clone(),
+                    entry: pos.entry,
+                    exit: exit_px,
+                    price: exit_px,
+                    qty: pos.qty,
+                    pnl: (pnl * 100.0).round() / 100.0,
+                    pct: (pct * 100.0).round() / 100.0,
+                    reason: reason.to_string(),
+                    time: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    raw_time: chrono::Utc::now().timestamp_millis(),
+                };
+
+                {
+                    let mut hist = self.trade_history.write().await;
+                    if hist.len() >= 100 {
+                        hist.pop_back();
+                    }
+                    hist.push_front(rec);
+                }
+
+                if let Some(aid) = pos.algo_trailing_id {
+                    let _ = self.client.cancel_algo_order(aid).await;
+                }
+                let _ = self.client.cancel_all_algo_orders(symbol).await;
+
+                self.active_positions.write().await.remove(symbol);
+                self.log(
+                    &format!("🎉 [{}] Posisi ditutup ({}) @ {}. PnL: {:+.2} USDT ({:+.2}%)", symbol, reason, exit_px, pnl, pct),
+                    "INFO",
+                ).await;
+
+                let (mode, last_tops) = {
+                    (
+                        self.config.read().await.coin_source_mode.clone(),
+                        self.last_top_symbols.read().await.clone(),
+                    )
+                };
+                if mode != "Manual" && !last_tops.contains(symbol) {
+                    self.engines.write().await.remove(symbol);
+                    self.restart_websocket().await;
+                    self.log(&format!("[{}] Posisi ditutup & di luar screener top. Melepas engine (Graceful Demotion selesai).", symbol), "INFO").await;
+                }
+            }
+            Err(e) => self.log(&format!("Gagal Tutup Posisi {}: {}", symbol, e), "ERROR").await,
+        }
+    }
+
+    pub async fn evaluate_exits_live(&self, symbol: &str, price: f64) {
+        let mut pos = match self.active_positions.write().await.get_mut(symbol).cloned() {
+            Some(p) => p,
+            None => return,
+        };
+
+        pos.highest_px = pos.highest_px.max(price);
+        pos.lowest_px = pos.lowest_px.min(price);
+
+        let diff_pct = if pos.entry > 0.0 {
+            if pos.side == "BUY" { (price - pos.entry) / pos.entry * 100.0 } else { (pos.entry - price) / pos.entry * 100.0 }
+        } else {
+            0.0
+        };
+        pos.unrealized_pnl = if pos.side == "BUY" { (price - pos.entry) * pos.qty } else { (pos.entry - price) * pos.qty };
+
+        let strat = self.get_effective_strategy(symbol).await;
+
+        if strat.tp_type == "Fixed %" && diff_pct >= strat.tp_val {
+            self.close_active_position(symbol, &format!("TP Fixed ({:+.2}%)", diff_pct)).await;
             return;
         }
 
-        let mut min_eq_pre = self.bal;
+        if strat.sl_type == "Fixed %" && diff_pct <= -strat.sl_val {
+            self.close_active_position(symbol, &format!("SL Fixed ({:+.2}%)", diff_pct)).await;
+            return;
+        }
 
-        // 1. Evaluasi posisi yang sudah terbuka dari bar sebelumnya
-        if !self.book.is_empty() {
-            let (f_lo, n_lo) = self.scan_at(l_px);
-            let (f_hi, n_hi) = self.scan_at(h_px);
-            let eq_lo = self.bal + f_lo;
-            let eq_hi = self.bal + f_hi;
-            min_eq_pre = eq_lo.min(eq_hi);
+        if strat.tp_type == "Median %" || strat.sl_type == "Median %" {
+            let (fav_m, adv_m) = {
+                let engines = self.engines.read().await;
+                if let Some(eng) = engines.get(symbol) {
+                    let (mh, ml) = eng.get_median_excursion();
+                    if pos.side == "BUY" { (mh, ml) } else { (ml, mh) }
+                } else {
+                    (None, None)
+                }
+            };
 
-            if eq_lo <= n_lo * mmr_pct / 100.0 || eq_hi <= n_hi * mmr_pct / 100.0 {
-                self.liquid = true;
-                self.liq_time = Some(t_ms);
-                self.liq_bar = Some(bar_idx);
-                self.liq_px = Some(c_px);
-                self.bal = 0.0;
-                self.dd_eq = 100.0;
-                self.dd_bal = 100.0;
-                self.book.clear();
-            } else {
-                let mut i = self.book.len() as isize - 1;
-                while i >= 0 {
-                    let idx = i as usize;
-                    if self.book[idx].lvl_start_time.is_none() {
-                        self.book[idx].lvl_start_time = Some(t_ms);
+            if strat.tp_type == "Median %" {
+                if let Some(fav) = fav_m {
+                    let tp_target = fav * strat.tp_val;
+                    if diff_pct >= tp_target {
+                        self.close_active_position(symbol, &format!("TP Median ({:+.2}%)", diff_pct)).await;
+                        return;
                     }
+                }
+            }
 
-                    let p = &mut self.book[idx];
-                    let bars_held = bar_idx.saturating_sub(p.bar);
-
-                    // Update hitungan candle searah & lawan arah pada penutupan candle
-                    let is_dir_candle = if p.side == 1 { c_px > o_px } else { c_px < o_px };
-                    let is_adv_candle = if p.side == 1 { c_px < o_px } else { c_px > o_px };
-                    p.dir_cnt = if is_dir_candle { p.dir_cnt + 1 } else { 0 };
-                    p.adv_cnt = if is_adv_candle { p.adv_cnt + 1 } else { 0 };
-
-                    let eff_stop = if p.side == 1 {
-                        match (p.sl, p.tstop) {
-                            (None, t) => t,
-                            (Some(s), None) => Some(s),
-                            (Some(s), Some(t)) => Some(s.max(t)),
-                        }
-                    } else {
-                        match (p.sl, p.tstop) {
-                            (None, t) => t,
-                            (Some(s), None) => Some(s),
-                            (Some(s), Some(t)) => Some(s.min(t)),
-                        }
-                    };
-
-                    let stop_hit = eff_stop.map(|s| if p.side == 1 { l_px <= s } else { h_px >= s }).unwrap_or(false);
-                    let tp_hit = p.tp.map(|tp| if p.side == 1 { h_px >= tp } else { l_px <= tp }).unwrap_or(false);
-
-                    // Evaluasi Bar-Based TP & Bar-Based SL
-                    let close_gross = (p.side as f64) * p.qty * (c_px - p.entry);
-                    let close_fee_out = p.qty * c_px * fee_entry / 100.0;
-                    let close_net_pnl = close_gross - p.fee_in - close_fee_out;
-                    let is_net_prof = close_net_pnl > 0.0;
-                    let is_in_loss = close_net_pnl <= 0.0;
-
-                    let mut bar_tp_hit = false;
-                    let mut bar_tp_why = String::new();
-                    let mut bar_sl_hit = false;
-                    let mut bar_sl_why = String::new();
-
-                    if p.tp_bar_t == 3 && bars_held >= p.tp_bar_n as usize {
-                        bar_tp_hit = true;
-                        bar_tp_why = format!("TP BAR ({}b)", bars_held);
-                    } else if p.tp_bar_t == 4 && bars_held >= p.tp_bar_n as usize && is_net_prof {
-                        bar_tp_hit = true;
-                        bar_tp_why = format!("TP B-PROF ({}b)", bars_held);
-                    } else if p.tp_bar_t == 5 && p.dir_cnt >= p.tp_bar_n && is_net_prof {
-                        bar_tp_hit = true;
-                        bar_tp_why = format!("TP B-DIR ({}c)", p.dir_cnt);
+            if strat.sl_type == "Median %" {
+                if let Some(adv) = adv_m {
+                    let sl_target = adv * strat.sl_val;
+                    if diff_pct <= -sl_target {
+                        self.close_active_position(symbol, &format!("SL Median ({:+.2}%)", diff_pct)).await;
+                        return;
                     }
-
-                    if p.sl_bar_t == 3 && bars_held >= p.sl_bar_n as usize && is_in_loss {
-                        bar_sl_hit = true;
-                        bar_sl_why = format!("SL B-LOSS ({}b)", bars_held);
-                    } else if p.sl_bar_t == 4 && bars_held >= p.sl_bar_n as usize {
-                        bar_sl_hit = true;
-                        bar_sl_why = format!("SL MAX-BAR ({}b)", bars_held);
-                    } else if p.sl_bar_t == 5 && p.adv_cnt >= p.sl_bar_n && is_in_loss {
-                        bar_sl_hit = true;
-                        bar_sl_why = format!("SL B-ADV ({}c)", p.adv_cnt);
-                    }
-
-                    // Urutan konservatif eksekusi intrabar:
-                    // StopHit -> BarSl (Loss/Adv) -> TpHit -> BarTp -> MaxBar Timeout
-                    if stop_hit {
-                        let is_tr = p.tstop.is_some() && (p.sl.is_none() || (if p.side == 1 { p.tstop.unwrap() >= p.sl.unwrap() } else { p.tstop.unwrap() <= p.sl.unwrap() }));
-                        let stop_px = eff_stop.unwrap();
-                        self.close_at(idx, stop_px, fee_entry, if is_tr { 3 } else { 2 }, if is_tr { "TRAIL" } else { "SL" }, bar_idx, t_ms, c_px, sr_px);
-                    } else if bar_sl_hit && p.sl_bar_t != 4 {
-                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms, c_px, sr_px);
-                    } else if tp_hit {
-                        let target_tp = p.tp.unwrap();
-                        self.close_at(idx, target_tp, fee_exit, 1, "TP", bar_idx, t_ms, c_px, sr_px);
-                    } else if bar_tp_hit {
-                        self.close_at(idx, c_px, fee_entry, 5, &bar_tp_why, bar_idx, t_ms, c_px, sr_px);
-                    } else if bar_sl_hit {
-                        self.close_at(idx, c_px, fee_entry, 6, &bar_sl_why, bar_idx, t_ms, c_px, sr_px);
-                    } else if let (Some(act_pct), Some(dist_pct)) = (p.act_pct, p.dist_pct) {
-                        p.ext = if p.side == 1 { p.ext.max(h_px) } else { p.ext.min(l_px) };
-                        let fav_pct = if p.side == 1 {
-                            (p.ext - p.entry) / p.entry * 100.0
-                        } else {
-                            (p.entry - p.ext) / p.entry * 100.0
-                        };
-                        if fav_pct >= act_pct {
-                            let ns = if p.side == 1 {
-                                p.ext * (1.0 - dist_pct / 100.0)
-                            } else {
-                                p.ext * (1.0 + dist_pct / 100.0)
-                            };
-                            if p.tstop.is_none() {
-                                p.tstop = Some(ns);
-                                p.tr_act_time = Some(t_ms);
-                                p.tr_act_stop = Some(ns);
-                            } else {
-                                let cur = p.tstop.unwrap();
-                                p.tstop = Some(if p.side == 1 { cur.max(ns) } else { cur.min(ns) });
-                            }
-                        }
-                    }
-                    i -= 1;
                 }
             }
         }
 
-        if !self.liquid {
-            // 2. Penanganan Posisi Lama Saat Terbentuk SR Baru
-            if new_sr && !self.book.is_empty() {
-                if self.sl_t == 0 {
-                    // Strategi SL NextSR: wajib tutup semua posisi lama di harga SR baru
-                    let mut j = self.book.len() as isize - 1;
-                    while j >= 0 {
-                        self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms, c_px, sr_px);
-                        j -= 1;
-                    }
-                } else if self.mode != 0 && prev_sr.is_some() {
-                    // One-Way Mode (Trend/Counter) dengan SL Tetap / Bar-SL: terapkan aturan oneWayRule
-                    let p_sr = prev_sr.unwrap();
-                    let up_step_now = sr_px > p_sr;
-                    let new_sig_dir = if self.mode == 1 {
-                        if up_step_now { 1 } else { -1 }
-                    } else {
-                        if up_step_now { -1 } else { 1 }
-                    };
-
-                    if one_way_rule == "Tutup Posisi Lama & Buka Baru di SR Baru" {
-                        let mut j = self.book.len() as isize - 1;
-                        while j >= 0 {
-                            self.close_at(j as usize, sr_px, fee_entry, 4, "NEXT SR", bar_idx, t_ms, c_px, sr_px);
-                            j -= 1;
-                        }
-                    } else if one_way_rule == "Reverse Jika Lawan Arah, Tahan Jika Searah" {
-                        let mut j = self.book.len() as isize - 1;
-                        while j >= 0 {
-                            if self.book[j as usize].side != new_sig_dir {
-                                self.close_at(j as usize, sr_px, fee_entry, 4, "REV SR", bar_idx, t_ms, c_px, sr_px);
-                            }
-                            j -= 1;
-                        }
-                    }
-                    // Opsi 'Tahan Posisi Lama (Skip SR Baru Jika Masih Open)': posisi lama tetap dibiarkan!
+        if strat.use_trailing {
+            if strat.trailing_mode == "Binance Endpoint" && pos.algo_trailing_id.is_some() {
+                // Biarkan native trailing stop dieksekusi Binance
+                if let Some(curr) = self.active_positions.write().await.get_mut(symbol) {
+                    curr.highest_px = pos.highest_px;
+                    curr.lowest_px = pos.lowest_px;
+                    curr.unrealized_pnl = pos.unrealized_pnl;
                 }
+                return;
             }
 
-            // 3. Entry Baru Tepat di Bar & Harga SR Saat Terbentuk
-            if new_sr && prev_sr.is_some() && in_win {
-                let p_sr = prev_sr.unwrap();
-                let need_med = self.tp_t == 1 || self.sl_t == 1 || (self.use_tr && self.tr_u == 1);
-                let max_pos_allowed = if self.mode == 0 { max_open } else { 1 };
+            let (act_pct, dist_pct) = if strat.trail_type == "Median %" {
+                let engines = self.engines.read().await;
+                let (mh, ml) = engines.get(symbol).map(|e| e.get_median_excursion()).unwrap_or((Some(1.0), Some(1.0)));
+                let fav = if pos.side == "BUY" { mh.unwrap_or(1.0) } else { ml.unwrap_or(1.0) };
+                (fav * strat.trail_act, fav * strat.trail_dist)
+            } else {
+                (strat.trail_act, strat.trail_dist)
+            };
 
-                if !need_med || n_samp >= min_levels {
-                    for k in 0..2 {
-                        let dir = if k == 0 { 1 } else { -1 };
-                        let up_step = sr_px > p_sr;
-                        let allowed = match self.mode {
-                            0 => true,
-                            1 => if up_step { dir == 1 } else { dir == -1 },
-                            _ => if up_step { dir == -1 } else { dir == 1 },
-                        };
+            if diff_pct >= act_pct && !pos.trail_active {
+                pos.trail_active = true;
+                pos.trail_stop = Some(if pos.side == "BUY" {
+                    price * (1.0 - dist_pct / 100.0)
+                } else {
+                    price * (1.0 + dist_pct / 100.0)
+                });
+                self.log(&format!("[{}] Trailing Stop Aktif @ {:.2}!", symbol, pos.trail_stop.unwrap()), "INFO").await;
+            }
 
-                        if allowed {
-                            let fav_m = if dir == 1 { med_h } else { med_l };
-                            let adv_m = if dir == 1 { med_l } else { med_h };
-                            let is_bar_tp = self.tp_t >= 3;
-                            let is_bar_sl = self.sl_t >= 3;
+            if pos.trail_active {
+                if pos.side == "BUY" {
+                    let new_stop = price * (1.0 - dist_pct / 100.0);
+                    pos.trail_stop = Some(pos.trail_stop.map(|s| s.max(new_stop)).unwrap_or(new_stop));
+                    if let Some(stop) = pos.trail_stop {
+                        if price <= stop {
+                            self.close_active_position(symbol, &format!("TRAIL STOP ({:.2})", stop)).await;
+                            return;
+                        }
+                    }
+                } else {
+                    let new_stop = price * (1.0 + dist_pct / 100.0);
+                    pos.trail_stop = Some(pos.trail_stop.map(|s| s.min(new_stop)).unwrap_or(new_stop));
+                    if let Some(stop) = pos.trail_stop {
+                        if price >= stop {
+                            self.close_active_position(symbol, &format!("TRAIL STOP ({:.2})", stop)).await;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
 
-                            let tp_p = match self.tp_t {
-                                1 => Some(fav_m * self.tp_v),
-                                2 => Some(self.tp_v),
-                                _ => None,
-                            };
-                            let sl_p = match self.sl_t {
-                                1 => Some(adv_m * self.sl_v),
-                                2 => Some(self.sl_v),
-                                _ => None,
-                            };
-                            let ac_p = if self.use_tr {
-                                Some(if self.tr_u == 1 { fav_m * self.tr_a } else { self.tr_a })
-                            } else {
-                                None
-                            };
-                            let ds_p = if self.use_tr {
-                                Some(if self.tr_u == 1 { fav_m * self.tr_d } else { self.tr_d })
-                            } else {
-                                None
-                            };
+        if let Some(curr) = self.active_positions.write().await.get_mut(symbol) {
+            curr.highest_px = pos.highest_px;
+            curr.lowest_px = pos.lowest_px;
+            curr.unrealized_pnl = pos.unrealized_pnl;
+            curr.trail_active = pos.trail_active;
+            curr.trail_stop = pos.trail_stop;
+        }
+    }
 
-                            let ok = (self.tp_t == 0 || is_bar_tp || tp_p.map(|v| v > 0.0).unwrap_or(false))
-                                && (self.sl_t == 0 || is_bar_sl || sl_p.map(|v| v > 0.0).unwrap_or(false))
-                                && (!self.use_tr || (ac_p.map(|v| v > 0.0).unwrap_or(false) && ds_p.map(|v| v > 0.0).unwrap_or(false)));
+    pub async fn evaluate_exits_on_candle_close(&self, symbol: &str, is_new_sr: bool, open_p: f64, close_p: f64) {
+        let mut pos = match self.active_positions.write().await.get_mut(symbol).cloned() {
+            Some(p) => p,
+            None => return,
+        };
 
-                            let base = if margin_basis == "Initial Balance" { init_cap } else { self.bal };
-                            let mrg = base * margin_pct / 100.0;
-                            let notional = mrg * (leverage as f64);
-                            let fee_in = notional * fee_entry / 100.0;
-                            let (f_c, _) = self.scan_at(c_px);
-                            let avail_eq = self.bal + f_c - self.used_m();
+        pos.bars_held += 1;
+        let is_dir = if pos.side == "BUY" { close_p > open_p } else { close_p < open_p };
+        let is_adv = if pos.side == "BUY" { close_p < open_p } else { close_p > open_p };
 
-                            if ok {
-                                if mrg > 0.0 && mrg + fee_in <= avail_eq && self.book.len() < max_pos_allowed {
-                                    let qty = notional / sr_px;
-                                    let tp_px = tp_p.map(|p| sr_px * (1.0 + (dir as f64) * p / 100.0));
-                                    let sl_px = sl_p.map(|p| sr_px * (1.0 - (dir as f64) * p / 100.0));
-                                    let tr_trig_px = ac_p.map(|p| sr_px * (1.0 + (dir as f64) * p / 100.0));
+        if is_dir { pos.dir_cnt += 1; }
+        if is_adv { pos.adv_cnt += 1; }
 
-                                    let b_tp_type = if is_bar_tp { self.tp_t } else { 0 };
-                                    let b_tp_tgt = if is_bar_tp { self.tp_v as i32 } else { 0 };
-                                    let b_sl_type = if is_bar_sl { self.sl_t } else { 0 };
-                                    let b_sl_tgt = if is_bar_sl { self.sl_v as i32 } else { 0 };
+        let strat = self.get_effective_strategy(symbol).await;
 
-                                    let tp_label = if let Some(tp) = tp_px {
-                                        format!("{}", tp)
-                                    } else if self.use_tr {
-                                        "TRAIL".to_string()
-                                    } else if b_tp_type == 3 {
-                                        format!("BarFix({}b)", b_tp_tgt)
-                                    } else if b_tp_type == 4 {
-                                        format!("BarProf(>={}b)", b_tp_tgt)
-                                    } else if b_tp_type == 5 {
-                                        format!("BarDir({}c)", b_tp_tgt)
-                                    } else {
-                                        "-".to_string()
-                                    };
+        if strat.sl_type == "NextSR Only" && is_new_sr {
+            self.close_active_position(symbol, "NextSR").await;
+            return;
+        }
 
-                                    let sl_label = if let Some(sl) = sl_px {
-                                        format!("{}", sl)
-                                    } else if b_sl_type == 3 {
-                                        format!("BarLoss(>={}b)", b_sl_tgt)
-                                    } else if b_sl_type == 4 {
-                                        format!("MaxBar({}b)", b_sl_tgt)
-                                    } else if b_sl_type == 5 {
-                                        format!("BarAdv({}c)", b_sl_tgt)
-                                    } else {
-                                        "NextSR".to_string()
-                                    };
+        let net_profit = pos.unrealized_pnl > 0.0;
+        let net_loss = pos.unrealized_pnl < 0.0;
 
-                                    self.book.push(Pos {
-                                        side: dir,
-                                        entry: sr_px,
-                                        entry_sr: sr_px,
-                                        qty,
-                                        margin: mrg,
-                                        fee_in,
-                                        tp: tp_px,
-                                        sl: sl_px,
-                                        tp_bar_t: b_tp_type,
-                                        tp_bar_n: b_tp_tgt,
-                                        dir_cnt: 0,
-                                        tp_desc: tp_label,
-                                        sl_bar_t: b_sl_type,
-                                        sl_bar_n: b_sl_tgt,
-                                        adv_cnt: 0,
-                                        sl_desc: sl_label,
-                                        act_pct: ac_p,
-                                        dist_pct: ds_p,
-                                        ext: sr_px,
-                                        tstop: None,
-                                        bar: bar_idx,
-                                        entry_time: t_ms,
-                                        lvl_start_time: None,
-                                        tr_trig_px,
-                                        tr_act_time: None,
-                                        tr_act_stop: None,
-                                    });
+        let b_tp_n = strat.tp_val as usize;
+        let b_sl_n = strat.sl_val as usize;
 
-                                    // Fee entry dipotong langsung dari saldo
-                                    self.bal -= fee_in;
-                                    self.fees += fee_in;
+        if strat.tp_type == "BarFix" && pos.bars_held >= b_tp_n {
+            self.close_active_position(symbol, &format!("BarFix ({}b)", pos.bars_held)).await;
+            return;
+        }
+        if strat.tp_type == "BarProf" && pos.bars_held >= b_tp_n && net_profit {
+            self.close_active_position(symbol, &format!("BarProf ({}b)", pos.bars_held)).await;
+            return;
+        }
+        if strat.tp_type == "BarDir" && pos.dir_cnt >= b_tp_n && net_profit {
+            self.close_active_position(symbol, &format!("BarDir ({}c)", pos.dir_cnt)).await;
+            return;
+        }
 
-                                    if dir == 1 {
-                                        self.n_long += 1;
-                                    } else {
-                                        self.n_short += 1;
+        if strat.sl_type == "BarLoss" && pos.bars_held >= b_sl_n && net_loss {
+            self.close_active_position(symbol, &format!("BarLoss ({}b)", pos.bars_held)).await;
+            return;
+        }
+        if strat.sl_type == "MaxBar" && pos.bars_held >= b_sl_n {
+            self.close_active_position(symbol, &format!("MaxBar Timeout ({}b)", pos.bars_held)).await;
+            return;
+        }
+        if strat.sl_type == "BarAdv" && pos.adv_cnt >= b_sl_n && net_loss {
+            self.close_active_position(symbol, &format!("BarAdv ({}c)", pos.adv_cnt)).await;
+            return;
+        }
+
+        if let Some(curr) = self.active_positions.write().await.get_mut(symbol) {
+            curr.bars_held = pos.bars_held;
+            curr.dir_cnt = pos.dir_cnt;
+            curr.adv_cnt = pos.adv_cnt;
+        }
+    }
+
+    pub async fn on_new_confirmed_sr(&self, symbol: &str, candle_open_time: i64, close_price: f64) {
+        let dir_opt = self.engines.read().await.get(symbol).and_then(|e| e.cur_dir.clone());
+        if let Some(dir) = dir_opt {
+            self.log(&format!("🎯 [{}] Signal SR Terkonfirmasi: {} @ {:.2}", symbol, dir, close_price), "INFO").await;
+            self.execute_entry(symbol, &dir, close_price, candle_open_time).await;
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // WORKER WEBSOCKET REAL-TIME (AGGTRADE + KLINE)
+    // -----------------------------------------------------------------
+    pub async fn websocket_worker(self: Arc<Self>) {
+        let mut endpoint_idx = 0;
+
+        while self.is_running.load(Ordering::SeqCst) {
+            let (symbols, interval, interval_ms) = {
+                let engines = self.engines.read().await;
+                let cfg = self.config.read().await;
+                let s_list: Vec<String> = engines.keys().map(|s| s.to_lowercase()).collect();
+                (s_list, cfg.timeframe.clone(), get_interval_ms(&cfg.timeframe))
+            };
+
+            if symbols.is_empty() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                continue;
+            }
+
+            let mut streams = Vec::new();
+            for s in &symbols {
+                streams.push(format!("{}@aggTrade", s));
+                streams.push(format!("{}@kline_{}", s, interval));
+            }
+
+            let ws_endpoint = WSS_ENDPOINTS[endpoint_idx % WSS_ENDPOINTS.len()];
+            endpoint_idx += 1;
+
+            match connect_async(ws_endpoint).await {
+                Ok((mut ws_stream, _)) => {
+                    self.log(&format!("WSS Real-Time Live terhubung ({} koin, {})", symbols.len(), ws_endpoint), "INFO").await;
+
+                    let sub_payload = serde_json::json!({
+                        "method": "SUBSCRIBE",
+                        "params": streams,
+                        "id": 1
+                    });
+
+                    if let Err(e) = ws_stream.send(tokio_tungstenite::tungstenite::Message::Text(sub_payload.to_string().into())).await {
+                        self.log(&format!("WSS Subscribe error: {}", e), "WARN").await;
+                        continue;
+                    }
+
+                    loop {
+                        tokio::select! {
+                            _ = self.ws_restart_notify.notified() => {
+                                self.log("WSS restart diminta (koin diperbarui). Menutup koneksi lama...", "INFO").await;
+                                let _ = ws_stream.close(None).await;
+                                break;
+                            }
+                            msg_opt = ws_stream.next() => {
+                                match msg_opt {
+                                    Some(Ok(tokio_tungstenite::tungstenite::Message::Text(txt))) => {
+                                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                                            if v.get("result").is_some() && v.get("id").and_then(|x| x.as_i64()) == Some(1) {
+                                                continue;
+                                            }
+
+                                            let data = v.get("data").unwrap_or(&v);
+                                            let event = data.get("e").and_then(|x| x.as_str()).unwrap_or("");
+                                            let sym = data.get("s").and_then(|x| x.as_str()).unwrap_or("").to_uppercase();
+
+                                            if sym.is_empty() { continue; }
+
+                                            if event == "aggTrade" {
+                                                let p = data.get("p").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                                                let raw_p = data.get("p").and_then(|x| x.as_str());
+                                                let t_ts = data.get("T").and_then(|x| x.as_i64()).unwrap_or(0);
+
+                                                let (is_sniping_candidate, candidate_dir) = {
+                                                    let mut engines = self.engines.write().await;
+                                                    if let Some(eng) = engines.get_mut(&sym) {
+                                                        eng.update_live_tick(p, None, None, None, None, None, raw_p, Some(t_ts));
+                                                        (eng.next_sr_active, eng.next_sr_dir.clone())
+                                                    } else {
+                                                        (false, None)
+                                                    }
+                                                };
+
+                                                let now_ms = self.client.get_server_time_ms().await;
+                                                let expected_open = (now_ms / interval_ms) * interval_ms;
+                                                let expected_close = expected_open + interval_ms;
+                                                let rem_ms = (expected_close - now_ms).max(0);
+
+                                                let entry_mode = self.config.read().await.entry_mode.clone();
+
+                                                if entry_mode.contains("Sniping") && rem_ms > 0 && rem_ms <= 2500 && is_sniping_candidate {
+                                                    if let Some(dir) = candidate_dir {
+                                                        let already_entered = self.last_entered_candle.read().await.get(&sym).copied() == Some(expected_open);
+                                                        if !already_entered {
+                                                            self.log(&format!("🎯 [{}] SNIPING TRIGGERED (:59s) pada calon {} (sisa {}ms)!", sym, dir, rem_ms), "INFO").await;
+                                                            let this = self.clone();
+                                                            let sym_c = sym.clone();
+                                                            tokio::spawn(async move {
+                                                                this.execute_entry(&sym_c, &dir, p, expected_open).await;
+                                                            });
+                                                        }
+                                                    }
+                                                }
+
+                                                self.evaluate_exits_live(&sym, p).await;
+
+                                            } else if event == "kline" {
+                                                if let Some(k) = data.get("k") {
+                                                    let o = k.get("o").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                                                    let h = k.get("h").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                                                    let l = k.get("l").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                                                    let c = k.get("c").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                                                    let raw_c = k.get("c").and_then(|x| x.as_str());
+                                                    let is_closed = k.get("x").and_then(|x| x.as_bool()).unwrap_or(false);
+                                                    let open_t = k.get("t").and_then(|x| x.as_i64()).unwrap_or(0);
+                                                    let close_t = k.get("T").and_then(|x| x.as_i64()).unwrap_or(0);
+
+                                                    if is_closed {
+                                                        let is_new_sr = {
+                                                            let mut engines = self.engines.write().await;
+                                                            if let Some(eng) = engines.get_mut(&sym) {
+                                                                eng.process_closed_candle(o, h, l, c, raw_c, Some(open_t), Some(close_t), Some(interval_ms))
+                                                            } else {
+                                                                false
+                                                            }
+                                                        };
+
+                                                        if is_new_sr {
+                                                            self.on_new_confirmed_sr(&sym, open_t, c).await;
+                                                        }
+
+                                                        self.evaluate_exits_on_candle_close(&sym, is_new_sr, o, c).await;
+                                                    } else {
+                                                        let mut engines = self.engines.write().await;
+                                                        if let Some(eng) = engines.get_mut(&sym) {
+                                                            if open_t == eng.candle_open_time || eng.candle_open_time <= eng.last_closed_open_time {
+                                                                eng.update_live_tick(c, Some(h), Some(l), Some(o), Some(open_t), Some(close_t), raw_c, None);
+                                                            }
+                                                        }
+                                                        self.evaluate_exits_live(&sym, c).await;
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                } else {
-                                    self.n_skip += 1;
+                                    Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => {
+                                        break;
+                                    }
+                                    Some(Err(e)) => {
+                                        self.log(&format!("WSS read error: {}", e), "WARN").await;
+                                        break;
+                                    }
+                                    None => break,
+                                    _ => {}
                                 }
                             }
                         }
                     }
                 }
-            }
-
-            // 4. Max Drawdown (equity worst-case & balance)
-            let (f_cl, _) = self.scan_at(c_px);
-            let eq_close = self.bal + f_cl;
-            let worst = min_eq_pre.min(eq_close);
-
-            if self.peak_eq > 0.0 {
-                self.dd_eq = self.dd_eq.max((self.peak_eq - worst) / self.peak_eq * 100.0);
-            }
-            self.peak_eq = self.peak_eq.max(eq_close);
-
-            if self.peak_bal > 0.0 {
-                self.dd_bal = self.dd_bal.max((self.peak_bal - self.bal) / self.peak_bal * 100.0);
-            }
-            self.peak_bal = self.peak_bal.max(self.bal);
-        }
-    }
-
-    #[inline(always)]
-    pub fn net_pct(&self, c_px: f64, init_cap: f64) -> f64 {
-        let (f, _) = self.scan_at(c_px);
-        let eq = if self.liquid { 0.0 } else { self.bal + f };
-        ((eq - init_cap) / init_cap) * 100.0
-    }
-
-    #[inline(always)]
-    pub fn pf(&self) -> f64 {
-        if self.gl > 0.0 {
-            self.gp / self.gl
-        } else if self.gp > 0.0 {
-            99.0
-        } else {
-            0.0
-        }
-    }
-
-    pub fn score(&self, c_px: f64, init_cap: f64, rank_by: &str) -> f64 {
-        let n = self.n_win + self.n_loss;
-        if n == 0 {
-            return -1_000_000_000.0;
-        }
-        let nt = self.net_pct(c_px, init_cap);
-        match rank_by {
-            "Net Profit %" => nt,
-            "Profit Factor" => self.pf(),
-            _ => nt / self.dd_eq.max(1.0),
-        }
-    }
-}
-
-pub fn calculate_volatility(
-    high: &[f64],
-    low: &[f64],
-    close: &[f64],
-    vol_type: &str,
-    vol_length: usize,
-    vol_mult: f64,
-) -> Vec<f64> {
-    let n = close.len();
-    let mut vol_value = vec![f64::NAN; n];
-
-    if vol_type == "Stdev" {
-        if n >= vol_length {
-            for i in (vol_length - 1)..n {
-                let window = &close[(i + 1 - vol_length)..=i];
-                let mean = window.iter().sum::<f64>() / (vol_length as f64);
-                let mut sum_sq_diff = 0.0;
-                for &v in window {
-                    let d = v - mean;
-                    sum_sq_diff += d * d;
+                Err(e) => {
+                    self.log(&format!("WSS Connect error: {}", e), "WARN").await;
                 }
-                let std = (sum_sq_diff / ((vol_length - 1) as f64)).sqrt();
-                vol_value[i] = std * vol_mult;
             }
-        }
-    } else {
-        // ATR with Wilder's RMA
-        let mut tr = vec![0.0; n];
-        if n > 0 {
-            tr[0] = high[0] - low[0];
-            for i in 1..n {
-                let tr1 = high[i] - low[i];
-                let tr2 = (high[i] - close[i - 1]).abs();
-                let tr3 = (low[i] - close[i - 1]).abs();
-                tr[i] = tr1.max(tr2).max(tr3);
-            }
-        }
-        if n >= vol_length {
-            let initial_sma: f64 = tr[..vol_length].iter().sum::<f64>() / (vol_length as f64);
-            vol_value[vol_length - 1] = initial_sma * vol_mult;
-            let inv_len = 1.0 / (vol_length as f64);
-            let one_minus_inv = 1.0 - inv_len;
-            let mut curr = initial_sma;
-            for i in vol_length..n {
-                curr = curr * one_minus_inv + tr[i] * inv_len;
-                vol_value[i] = curr * vol_mult;
-            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
         }
     }
-    vol_value
-}
 
-pub fn calculate_step_sr(close: &[f64], vol_value: &[f64], line_mode: &str) -> Vec<f64> {
-    let n = close.len();
-    let mut confirmed_sr = vec![0.0; n];
-    if n == 0 {
-        return confirmed_sr;
-    }
-    let mut cur_sr = close[0];
-    confirmed_sr[0] = cur_sr;
-
-    for i in 1..n {
-        let vv = vol_value[i];
-        let c = close[i];
-        if !vv.is_nan() && (c - cur_sr).abs() > vv {
-            if line_mode == "Anchor" {
-                cur_sr = c;
-            } else {
-                cur_sr = cur_sr + (if c > cur_sr { 1.0 } else { -1.0 }) * vv;
-            }
-        }
-        confirmed_sr[i] = cur_sr;
-    }
-    confirmed_sr
-}
-
-pub fn median(arr: &[f64]) -> f64 {
-    if arr.is_empty() {
-        return f64::NAN;
-    }
-    let mut sorted = arr.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let len = sorted.len();
-    if len % 2 == 0 {
-        (sorted[len / 2 - 1] + sorted[len / 2]) / 2.0
-    } else {
-        sorted[len / 2]
-    }
-}
-
-pub fn create_sim_suite(
-    inc_hedge: bool,
-    inc_trend: bool,
-    inc_counter: bool,
-    inc_bar_tp: bool,
-    inc_bar_sl: bool,
-    fixed1: f64,
-    fixed2: f64,
-    fixed3: f64,
-    bar_tp1: i32,
-    bar_tp2: i32,
-    bar_tp_dir: i32,
-    sl_bar1: i32,
-    sl_bar2: i32,
-    sl_bar_adv: i32,
-    init_cap: f64,
-    sel_strategy: &str,
-) -> Vec<Sim> {
-    let mut sims = Vec::with_capacity(105);
-    let f1 = format!("{:.2}", fixed1).trim_end_matches('0').trim_end_matches('.').to_string();
-    let f2 = format!("{:.2}", fixed2).trim_end_matches('0').trim_end_matches('.').to_string();
-    let f3 = format!("{:.2}", fixed3).trim_end_matches('0').trim_end_matches('.').to_string();
-    let b1 = bar_tp1.to_string();
-    let b2 = bar_tp2.to_string();
-    let bd = bar_tp_dir.to_string();
-    let s1 = sl_bar1.to_string();
-    let s2 = sl_bar2.to_string();
-    let sa = sl_bar_adv.to_string();
-
-    let add_set = |sims: &mut Vec<Sim>, pfx: &str, mode: i32| {
-        let p = format!("{} | ", pfx);
-
-        // 1. Strategi Base Persen (13 Strategi)
-        sims.push(Sim::new(format!("{}TP 0.5M | SL NextSR", p), format!("{}TP 0.5M | SL NextSR", p), mode, 1, 0.5, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP 1M | SL NextSR", p), format!("{}TP 1M | SL NextSR", p), mode, 1, 1.0, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}NextSR only", p), format!("{}NextSR only", p), mode, 0, 0.0, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP 0.5M | SL 1M", p), format!("{}TP 0.5M | SL 1M", p), mode, 1, 0.5, 1, 1.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP 1M | SL 1M", p), format!("{}TP 1M | SL 1M", p), mode, 1, 1.0, 1, 1.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP 1M | SL 0.5M", p), format!("{}TP 1M | SL 0.5M", p), mode, 1, 1.0, 1, 0.5, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP F1 ({}%) | SL F1 ({}%)", p, f1, f1), format!("{}TP F1 | SL F1", p), mode, 2, fixed1, 2, fixed1, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP F2 ({}%) | SL F1 ({}%)", p, f2, f1), format!("{}TP F2 | SL F1", p), mode, 2, fixed2, 2, fixed1, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP F3 ({}%) | SL F2 ({}%)", p, f3, f2), format!("{}TP F3 | SL F2", p), mode, 2, fixed3, 2, fixed2, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}TP F2 ({}%) | SL NextSR", p, f2), format!("{}TP F2 | SL NextSR", p), mode, 2, fixed2, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-        sims.push(Sim::new(format!("{}Trail 0.5M/0.5M | SL NextSR", p), format!("{}Trail 0.5M/0.5M | SL NextSR", p), mode, 0, 0.0, 0, 0.0, true, 1, 0.5, 0.5, init_cap, 30));
-        sims.push(Sim::new(format!("{}Trail 1M/0.5M | SL NextSR", p), format!("{}Trail 1M/0.5M | SL NextSR", p), mode, 0, 0.0, 0, 0.0, true, 1, 1.0, 0.5, init_cap, 30));
-        sims.push(Sim::new(format!("{}Trail F2/F1 ({}%/{}) | SL F1 ({}%)", p, f2, f1, f1), format!("{}Trail F2/F1 | SL F1", p), mode, 0, 0.0, 2, fixed1, true, 2, fixed2, fixed1, init_cap, 30));
-
-        // 2. Strategi Base Bar - TP (8 Strategi)
-        let need_bar_tp = inc_bar_tp || sel_strategy.contains("BarFix") || sel_strategy.contains("BarProf") || sel_strategy.contains("BarDir");
-        if need_bar_tp {
-            sims.push(Sim::new(format!("{}TP BarFix B1 ({}b) | SL NextSR", p, b1), format!("{}TP BarFix B1 | SL NextSR", p), mode, 3, bar_tp1 as f64, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarFix B2 ({}b) | SL NextSR", p, b2), format!("{}TP BarFix B2 | SL NextSR", p), mode, 3, bar_tp2 as f64, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarFix B1 ({}b) | SL F1 ({}%)", p, b1, f1), format!("{}TP BarFix B1 | SL F1", p), mode, 3, bar_tp1 as f64, 2, fixed1, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B1 (>={}b) | SL NextSR", p, b1), format!("{}TP BarProf B1 | SL NextSR", p), mode, 4, bar_tp1 as f64, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B2 (>={}b) | SL NextSR", p, b2), format!("{}TP BarProf B2 | SL NextSR", p), mode, 4, bar_tp2 as f64, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B1 (>={}b) | SL F1 ({}%)", p, b1, f1), format!("{}TP BarProf B1 | SL F1", p), mode, 4, bar_tp1 as f64, 2, fixed1, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarDir BD ({}c) | SL NextSR", p, bd), format!("{}TP BarDir BD | SL NextSR", p), mode, 5, bar_tp_dir as f64, 0, 0.0, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarDir BD ({}c) | SL F1 ({}%)", p, bd, f1), format!("{}TP BarDir BD | SL F1", p), mode, 5, bar_tp_dir as f64, 2, fixed1, false, 1, 0.0, 0.0, init_cap, 30));
-        }
-
-        // 3. Strategi Base Bar - SL (8 Strategi)
-        let need_bar_sl = inc_bar_sl || sel_strategy.contains("BarLoss") || sel_strategy.contains("MaxBar") || sel_strategy.contains("BarAdv");
-        if need_bar_sl {
-            sims.push(Sim::new(format!("{}TP 1M | SL BarLoss S1 (>={}b)", p, s1), format!("{}TP 1M | SL BarLoss S1", p), mode, 1, 1.0, 3, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP F2 ({}%) | SL BarLoss S1 (>={}b)", p, f2, s1), format!("{}TP F2 | SL BarLoss S1", p), mode, 2, fixed2, 3, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}Trail 1M/0.5M | SL BarLoss S1 (>={}b)", p, s1), format!("{}Trail 1M/0.5M | SL BarLoss S1", p), mode, 0, 0.0, 3, sl_bar1 as f64, true, 1, 1.0, 0.5, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP 1M | SL MaxBar S1 ({}b)", p, s1), format!("{}TP 1M | SL MaxBar S1", p), mode, 1, 1.0, 4, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP F2 ({}%) | SL MaxBar S2 ({}b)", p, f2, s2), format!("{}TP F2 | SL MaxBar S2", p), mode, 2, fixed2, 4, sl_bar2 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP 1M | SL BarAdv SA ({}c)", p, sa), format!("{}TP 1M | SL BarAdv SA", p), mode, 1, 1.0, 5, sl_bar_adv as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP F2 ({}%) | SL BarAdv SA ({}c)", p, f2, sa), format!("{}TP F2 | SL BarAdv SA", p), mode, 2, fixed2, 5, sl_bar_adv as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}Trail F2/F1 ({}%/{}) | SL BarAdv SA ({}c)", p, f2, f1, sa), format!("{}Trail F2/F1 | SL BarAdv SA", p), mode, 0, 0.0, 5, sl_bar_adv as f64, true, 2, fixed2, fixed1, init_cap, 30));
-        }
-
-        // 4. Strategi Base Bar Murni (6 Strategi)
-        let need_bar_both = (inc_bar_tp && inc_bar_sl) || sel_strategy.contains("Bar");
-        if need_bar_both {
-            sims.push(Sim::new(format!("{}TP BarFix B2 ({}b) | SL BarLoss S1 (>={}b)", p, b2, s1), format!("{}TP BarFix B2 | SL BarLoss S1", p), mode, 3, bar_tp2 as f64, 3, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B1 (>={}b) | SL BarLoss S1 (>={}b)", p, b1, s1), format!("{}TP BarProf B1 | SL BarLoss S1", p), mode, 4, bar_tp1 as f64, 3, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B1 (>={}b) | SL MaxBar S2 ({}b)", p, b1, s2), format!("{}TP BarProf B1 | SL MaxBar S2", p), mode, 4, bar_tp1 as f64, 4, sl_bar2 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarProf B1 (>={}b) | SL BarAdv SA ({}c)", p, b1, sa), format!("{}TP BarProf B1 | SL BarAdv SA", p), mode, 4, bar_tp1 as f64, 5, sl_bar_adv as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarDir BD ({}c) | SL BarLoss S1 (>={}b)", p, bd, s1), format!("{}TP BarDir BD | SL BarLoss S1", p), mode, 5, bar_tp_dir as f64, 3, sl_bar1 as f64, false, 1, 0.0, 0.0, init_cap, 30));
-            sims.push(Sim::new(format!("{}TP BarDir BD ({}c) | SL BarAdv SA ({}c)", p, bd, sa), format!("{}TP BarDir BD | SL BarAdv SA", p), mode, 5, bar_tp_dir as f64, 5, sl_bar_adv as f64, false, 1, 0.0, 0.0, init_cap, 30));
-        }
-    };
-
-    if inc_trend || sel_strategy.starts_with("TREND") {
-        add_set(&mut sims, "TREND", 1);
-    }
-    if inc_counter || sel_strategy.starts_with("COUNTER") {
-        add_set(&mut sims, "COUNTER", 2);
-    }
-    if inc_hedge || sel_strategy.starts_with("HEDGE") {
-        add_set(&mut sims, "HEDGE", 0);
-    }
-
-    if sims.is_empty() {
-        add_set(&mut sims, "TREND", 1);
-    }
-
-    sims
-}
-
-pub fn get_all_strategy_keys() -> Vec<String> {
-    let mut keys = Vec::with_capacity(105);
-    for pfx in ["TREND", "COUNTER", "HEDGE"] {
-        let p = format!("{} | ", pfx);
-        keys.extend(vec![
-            // Base Persen (13)
-            format!("{}TP 0.5M | SL NextSR", p),
-            format!("{}TP 1M | SL NextSR", p),
-            format!("{}NextSR only", p),
-            format!("{}TP 0.5M | SL 1M", p),
-            format!("{}TP 1M | SL 1M", p),
-            format!("{}TP 1M | SL 0.5M", p),
-            format!("{}TP F1 | SL F1", p),
-            format!("{}TP F2 | SL F1", p),
-            format!("{}TP F3 | SL F2", p),
-            format!("{}TP F2 | SL NextSR", p),
-            format!("{}Trail 0.5M/0.5M | SL NextSR", p),
-            format!("{}Trail 1M/0.5M | SL NextSR", p),
-            format!("{}Trail F2/F1 | SL F1", p),
-            // Base Bar - TP (8)
-            format!("{}TP BarFix B1 | SL NextSR", p),
-            format!("{}TP BarFix B2 | SL NextSR", p),
-            format!("{}TP BarFix B1 | SL F1", p),
-            format!("{}TP BarProf B1 | SL NextSR", p),
-            format!("{}TP BarProf B2 | SL NextSR", p),
-            format!("{}TP BarProf B1 | SL F1", p),
-            format!("{}TP BarDir BD | SL NextSR", p),
-            format!("{}TP BarDir BD | SL F1", p),
-            // Base Bar - SL (8)
-            format!("{}TP 1M | SL BarLoss S1", p),
-            format!("{}TP F2 | SL BarLoss S1", p),
-            format!("{}Trail 1M/0.5M | SL BarLoss S1", p),
-            format!("{}TP 1M | SL MaxBar S1", p),
-            format!("{}TP F2 | SL MaxBar S2", p),
-            format!("{}TP 1M | SL BarAdv SA", p),
-            format!("{}TP F2 | SL BarAdv SA", p),
-            format!("{}Trail F2/F1 | SL BarAdv SA", p),
-            // Base Bar Murni (6)
-            format!("{}TP BarFix B2 | SL BarLoss S1", p),
-            format!("{}TP BarProf B1 | SL BarLoss S1", p),
-            format!("{}TP BarProf B1 | SL MaxBar S2", p),
-            format!("{}TP BarProf B1 | SL BarAdv SA", p),
-            format!("{}TP BarDir BD | SL BarLoss S1", p),
-            format!("{}TP BarDir BD | SL BarAdv SA", p),
-        ]);
-    }
-    keys
-}
-
-pub fn pass_filter(cand: &Sim, strat_filter: &str) -> bool {
-    match strat_filter {
-        "Semua Strategi" => true,
-        "Base Bar (Semua TP / SL Bar)" => cand.is_bar_any(),
-        "Base Bar Murni (TP Bar + SL Bar)" => cand.is_bar_both(),
-        "Base Bar - TP Saja" => cand.is_bar_tp(),
-        "Base Bar - SL Saja" => cand.is_bar_sl(),
-        "Base Persen (Semua Fixed % & Median %)" => cand.is_pct_any(),
-        "Base Persen Tetap (Fixed F1/F2/F3 %)" => cand.is_fixed_pct(),
-        "Base Persen Median (0.5M / 1M %)" => cand.is_median_pct(),
-        _ => true,
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LeaderboardRow {
-    pub rank: usize,
-    pub name: String,
-    pub raw_name: String,
-    pub key: String,
-    pub is_selected: bool,
-    pub net_pct: f64,
-    pub net_pct_str: String,
-    pub dd_eq: f64,
-    pub dd_eq_str: String,
-    pub dd_bal: f64,
-    pub dd_bal_str: String,
-    pub win_pct: String,
-    pub trades: i32,
-    pub pf: f64,
-    pub pf_str: String,
-    pub liq: String,
-    pub badge: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CategoryWinner {
-    pub category_code: String, // "#1 ALL", "#X BAR2", "#X B-TP", "#X B-SL", "#X FIX%", "#X MED%"
-    pub label: String,
-    pub name: String,
-    pub key: String,
-    pub rank: usize,
-    pub net_pct: f64,
-    pub net_pct_str: String,
-    pub dd_eq: f64,
-    pub dd_eq_str: String,
-    pub dd_bal: f64,
-    pub dd_bal_str: String,
-    pub win_pct: String,
-    pub trades: i32,
-    pub pf: f64,
-    pub pf_str: String,
-    pub liq: String,
-    pub color_code: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DetailRow {
-    pub key: String,
-    pub val: String,
-    pub color: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BacktestResult {
-    pub leaderboard: LeaderboardSection,
-    pub detail: DetailSection,
-    pub summary: SummarySection,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LeaderboardSection {
-    pub title: String,
-    pub headers: Vec<String>,
-    pub rows: Vec<LeaderboardRow>,
-    pub category_winners: Vec<CategoryWinner>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DetailSection {
-    pub title: String,
-    pub rows: Vec<DetailRow>,
-    pub recent_trades: Vec<TradeRec>,
-    pub open_positions: Vec<OpenPositionView>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SummarySection {
-    pub total_sims: usize,
-    pub filtered_sims: usize,
-    pub candles_count: usize,
-    pub start_date: String,
-    pub end_date: String,
-    pub last_price: f64,
-    pub last_price_str: String,
-    pub last_sr: f64,
-    pub last_sr_str: String,
-    pub last_vol: f64,
-    pub last_vol_str: String,
-}
-
-pub fn run_backtest(
-    times: &[i64],
-    open_px: &[f64],
-    high: &[f64],
-    low: &[f64],
-    close: &[f64],
-    line_mode: &str,
-    vol_type: &str,
-    vol_length: usize,
-    vol_mult: f64,
-    realtime_update: bool,
-    init_cap: f64,
-    margin_pct: f64,
-    margin_basis: &str,
-    leverage: i32,
-    fee_entry: f64,
-    fee_exit: f64,
-    mmr_pct: f64,
-    one_way_rule: &str,
-    max_open: usize,
-    bt_days: i32,
-    inc_hedge: bool,
-    inc_trend: bool,
-    inc_counter: bool,
-    inc_bar_tp: bool,
-    inc_bar_sl: bool,
-    fixed1: f64,
-    fixed2: f64,
-    fixed3: f64,
-    bar_tp1: i32,
-    bar_tp2: i32,
-    bar_tp_dir: i32,
-    sl_bar1: i32,
-    sl_bar2: i32,
-    sl_bar_adv: i32,
-    min_levels: usize,
-    rank_by: &str,
-    strat_filter: &str,
-    top_n: usize,
-    sel_strategy: &str,
-) -> BacktestResult {
-    let n = close.len();
-    if n == 0 {
-        panic!("Candle data is empty");
-    }
-
-    // 1. Volatility & Step S/R
-    let vol_value = calculate_volatility(high, low, close, vol_type, vol_length, vol_mult);
-    let confirmed_sr = calculate_step_sr(close, &vol_value, line_mode);
-
-    // 2. Sims Suite (Base Persen + Base Bar)
-    let mut sims = create_sim_suite(
-        inc_hedge,
-        inc_trend,
-        inc_counter,
-        inc_bar_tp,
-        inc_bar_sl,
-        fixed1,
-        fixed2,
-        fixed3,
-        bar_tp1,
-        bar_tp2,
-        bar_tp_dir,
-        sl_bar1,
-        sl_bar2,
-        sl_bar_adv,
-        init_cap,
-        sel_strategy,
-    );
-
-    let mut hi_arr = Vec::with_capacity(1000);
-    let mut lo_arr = Vec::with_capacity(1000);
-    let mut sim_level: Option<f64> = None;
-    let mut sim_hi: Option<f64> = None;
-    let mut sim_lo: Option<f64> = None;
-
-    let timenow_ms = times[n - 1];
-
-    let mut med_h = f64::NAN;
-    let mut med_l = f64::NAN;
-
-    for i in 0..n {
-        let c_sr = confirmed_sr[i];
-        let h = high[i];
-        let l = low[i];
-        let c = close[i];
-        let o = open_px[i];
-        let t = times[i];
-        let in_win = bt_days == 0 || (t >= timenow_ms - (bt_days as i64) * 86_400_000);
-
-        // Active SR sinkronisasi
-        let active_sr = if realtime_update {
-            // Intrabar step level logic
-            let step_level = if line_mode == "Anchor" {
-                c
-            } else {
-                let dir_sign = if c > c_sr { 1.0 } else { -1.0 };
-                c_sr + dir_sign * vol_value[i]
+    // -----------------------------------------------------------------
+    // WORKER FAPI RECONCILIATION FALLBACK
+    // -----------------------------------------------------------------
+    pub async fn fapi_live_fallback_worker(self: Arc<Self>) {
+        while self.is_running.load(Ordering::SeqCst) {
+            let (interval, interval_ms, num_coins) = {
+                let cfg = self.config.read().await;
+                (cfg.timeframe.clone(), get_interval_ms(&cfg.timeframe), self.engines.read().await.len())
             };
-            if !vol_value[i].is_nan() && (c - c_sr).abs() > vol_value[i] {
-                step_level
-            } else {
-                c_sr
-            }
-        } else {
-            c_sr
-        };
+            let poll_ms = (350.max((num_coins as u64) * 250)).min(3000);
+            tokio::time::sleep(tokio::time::Duration::from_millis(poll_ms)).await;
 
-        let mut new_sr = false;
-        let prev_sr = sim_level;
+            let syms: Vec<String> = self.engines.read().await.keys().cloned().collect();
+            let now_ms = self.client.get_server_time_ms().await;
+            let expected_current_open = (now_ms / interval_ms) * interval_ms;
+            let expected_prev_open = expected_current_open - interval_ms;
 
-        match sim_level {
-            None => {
-                sim_level = Some(active_sr);
-            }
-            Some(curr) if active_sr != curr => {
-                if let (Some(sh), Some(sl)) = (sim_hi, sim_lo) {
-                    if curr != 0.0 {
-                        hi_arr.push(((sh - curr) / curr * 100.0).max(0.0));
-                        lo_arr.push(((curr - sl) / curr * 100.0).max(0.0));
-                        med_h = median(&hi_arr);
-                        med_l = median(&lo_arr);
+            for sym in syms {
+                let missed_close = {
+                    let engines = self.engines.read().await;
+                    engines.get(&sym).map(|e| e.last_closed_open_time < expected_prev_open && (now_ms - expected_current_open) >= 1200).unwrap_or(false)
+                };
+
+                if !missed_close { continue; }
+
+                if let Ok(klines) = self.client.fetch_klines(&sym, &interval, 3).await {
+                    let n = klines.len();
+                    if n > 1 {
+                        for k in &klines[..n - 1] {
+                            let k_open = k.get(0).and_then(|x| x.as_i64()).unwrap_or(0);
+                            let k_close = k.get(6).and_then(|x| x.as_i64()).unwrap_or(0);
+                            let c_val = k.get(4).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                            let o_val = k.get(1).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                            let h_val = k.get(2).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                            let l_val = k.get(3).and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+                            let raw_c = k.get(4).and_then(|x| x.as_str());
+
+                            let is_new_sr = {
+                                let mut engines = self.engines.write().await;
+                                if let Some(eng) = engines.get_mut(&sym) {
+                                    if k_open > eng.last_closed_open_time && k_close <= now_ms {
+                                        eng.process_closed_candle(o_val, h_val, l_val, c_val, raw_c, Some(k_open), Some(k_close), Some(interval_ms))
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            };
+
+                            if is_new_sr {
+                                self.log(&format!("⚡ [{}] Step SR (via Rekonsiliasi)", sym), "INFO").await;
+                                self.on_new_confirmed_sr(&sym, k_open, c_val).await;
+                                self.evaluate_exits_on_candle_close(&sym, is_new_sr, o_val, c_val).await;
+                            }
+                        }
                     }
                 }
-                sim_level = Some(active_sr);
-                sim_hi = None;
-                sim_lo = None;
-                new_sr = true;
-            }
-            _ => {
-                sim_hi = Some(sim_hi.map(|v| v.max(h)).unwrap_or(h));
-                sim_lo = Some(sim_lo.map(|v| v.min(l)).unwrap_or(l));
-            }
-        }
-
-        let n_smp = hi_arr.len();
-
-        for s in &mut sims {
-            if !s.liquid && (!s.book.is_empty() || new_sr) {
-                s.process_bar(
-                    new_sr,
-                    active_sr,
-                    prev_sr,
-                    med_h,
-                    med_l,
-                    n_smp,
-                    in_win,
-                    i,
-                    t,
-                    o,
-                    h,
-                    l,
-                    c,
-                    init_cap,
-                    margin_pct,
-                    margin_basis,
-                    leverage,
-                    fee_entry,
-                    fee_exit,
-                    mmr_pct,
-                    max_open,
-                    min_levels,
-                    one_way_rule,
-                );
             }
         }
     }
 
-    let last_c = close[n - 1];
+    // -----------------------------------------------------------------
+    // WORKER TIMEOUT ORDER LIMIT
+    // -----------------------------------------------------------------
+    pub async fn order_timeout_cleaner(self: Arc<Self>) {
+        while self.is_running.load(Ordering::SeqCst) {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            let timeout_sec = self.config.read().await.limit_timeout_sec;
+            let now = chrono::Utc::now().timestamp_millis() as f64 / 1000.0;
 
-    // Rank ALL strategies
-    let mut scored: Vec<(usize, f64)> = sims.iter().enumerate().map(|(idx, s)| (idx, s.score(last_c, init_cap, rank_by))).collect();
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let mut to_del = Vec::new();
+            {
+                let orders = self.pending_sniping_orders.read().await;
+                for (sym, o) in orders.iter() {
+                    if now - o.time >= timeout_sec {
+                        let _ = self.client.cancel_order(sym, o.order_id).await;
+                        self.log(&format!("[{}] Limit order ID {} dibatalkan (Timeout {}s).", sym, o.order_id, timeout_sec), "INFO").await;
+                        to_del.push(sym.clone());
+                    }
+                }
+            }
 
-    let sorted_sims: Vec<Sim> = scored.into_iter().map(|(idx, _)| sims[idx].clone()).collect();
-
-    // Collect filtered strategies & category winners
-    let mut filt_sims: Vec<Sim> = Vec::with_capacity(sorted_sims.len());
-    let mut filt_ranks: Vec<usize> = Vec::with_capacity(sorted_sims.len());
-
-    let best_overall_sim = sorted_sims[0].clone();
-    let best_overall_rank = 1usize;
-    let mut best_bar_both: Option<(Sim, usize)> = None;
-    let mut best_bar_tp: Option<(Sim, usize)> = None;
-    let mut best_bar_sl: Option<(Sim, usize)> = None;
-    let mut best_fixed_pct: Option<(Sim, usize)> = None;
-    let mut best_med_pct: Option<(Sim, usize)> = None;
-
-    for (r, cand) in sorted_sims.iter().enumerate() {
-        let global_rank = r + 1;
-        if pass_filter(cand, strat_filter) {
-            filt_sims.push(cand.clone());
-            filt_ranks.push(global_rank);
-        }
-        if cand.is_bar_both() && best_bar_both.is_none() {
-            best_bar_both = Some((cand.clone(), global_rank));
-        }
-        if cand.is_bar_tp() && best_bar_tp.is_none() {
-            best_bar_tp = Some((cand.clone(), global_rank));
-        }
-        if cand.is_bar_sl() && best_bar_sl.is_none() {
-            best_bar_sl = Some((cand.clone(), global_rank));
-        }
-        if cand.is_fixed_pct() && best_fixed_pct.is_none() {
-            best_fixed_pct = Some((cand.clone(), global_rank));
-        }
-        if cand.is_median_pct() && best_med_pct.is_none() {
-            best_med_pct = Some((cand.clone(), global_rank));
-        }
-    }
-
-    // Identify selected strategy for Visual / Detail
-    let mut vis_sim: Option<Sim> = None;
-    let mut sel_rank: Option<usize> = None;
-
-    if sel_strategy == "Top #1 Sesuai Filter Leaderboard (Otomatis)" {
-        if !filt_sims.is_empty() {
-            vis_sim = Some(filt_sims[0].clone());
-            sel_rank = Some(filt_ranks[0]);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy == "Top #1 Semua Strategi (Otomatis)" {
-        vis_sim = Some(best_overall_sim.clone());
-        sel_rank = Some(best_overall_rank);
-    } else if sel_strategy == "Top #1 Base Bar Murni (TP Bar + SL Bar Terbaik)" {
-        if let Some((s, r)) = &best_bar_both {
-            vis_sim = Some(s.clone());
-            sel_rank = Some(*r);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy == "Top #1 Base Bar TP (Bar TP Terbaik)" {
-        if let Some((s, r)) = &best_bar_tp {
-            vis_sim = Some(s.clone());
-            sel_rank = Some(*r);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy == "Top #1 Base Bar SL (Bar SL Terbaik)" {
-        if let Some((s, r)) = &best_bar_sl {
-            vis_sim = Some(s.clone());
-            sel_rank = Some(*r);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy == "Top #1 Base Persen Tetap (Fixed % Terbaik)" {
-        if let Some((s, r)) = &best_fixed_pct {
-            vis_sim = Some(s.clone());
-            sel_rank = Some(*r);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy == "Top #1 Base Persen Median (Median % Terbaik)" {
-        if let Some((s, r)) = &best_med_pct {
-            vis_sim = Some(s.clone());
-            sel_rank = Some(*r);
-        } else {
-            vis_sim = Some(best_overall_sim.clone());
-            sel_rank = Some(best_overall_rank);
-        }
-    } else if sel_strategy != "None" {
-        for (r_idx, s) in sorted_sims.iter().enumerate() {
-            if s.key == sel_strategy {
-                vis_sim = Some(s.clone());
-                sel_rank = Some(r_idx + 1);
-                break;
+            let mut orders_w = self.pending_sniping_orders.write().await;
+            for sym in to_del {
+                orders_w.remove(&sym);
             }
         }
     }
 
-    // Build Leaderboard
-    let ld_headers = vec![
-        "#".to_string(),
-        "Strategi".to_string(),
-        "Net %".to_string(),
-        "DD Eq %".to_string(),
-        "DD Bal %".to_string(),
-        "Win %".to_string(),
-        "Trade".to_string(),
-        "PF".to_string(),
-        "Liq".to_string(),
-    ];
+    // -----------------------------------------------------------------
+    // WORKER SINKRONISASI BURSA (EXCHANGE SYNC)
+    // -----------------------------------------------------------------
+    pub async fn exchange_sync_worker(self: Arc<Self>) {
+        while self.is_running.load(Ordering::SeqCst) {
+            tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+            self.sync_active_positions_from_exchange().await;
+            self.sync_trades_from_exchange().await;
+        }
+    }
 
-    let shown_n = top_n.min(filt_sims.len());
-    let mut ld_rows = Vec::with_capacity(shown_n);
+    // -----------------------------------------------------------------
+    // WORKER DYNAMIC SCREENER (DENGAN GRACEFUL DEMOTION)
+    // -----------------------------------------------------------------
+    pub async fn dynamic_screener_worker(self: Arc<Self>) {
+        while self.is_running.load(Ordering::SeqCst) {
+            let refresh_min = self.config.read().await.screener_refresh_min;
+            tokio::time::sleep(tokio::time::Duration::from_secs(10.max(refresh_min * 60))).await;
 
-    for r in 0..shown_n {
-        let b = &filt_sims[r];
-        let glb_rank = filt_ranks[r];
-        let nt = b.net_pct(last_c, init_cap);
-        let n_trades = b.n_win + b.n_loss;
-        let is_sel = vis_sim.as_ref().map(|v| v.key == b.key).unwrap_or(false);
-        let nm_tx = if is_sel {
-            format!("[PILIH] {}", b.name)
-        } else {
-            b.name.clone()
-        };
-        let win_pct_str = if n_trades > 0 {
-            format!("{:.1}%", (b.n_win as f64) * 100.0 / (n_trades as f64))
-        } else {
-            "-".to_string()
-        };
-        let pf_val = b.pf();
+            let mode = self.config.read().await.coin_source_mode.clone();
+            if mode == "Manual" {
+                continue;
+            }
 
-        ld_rows.push(LeaderboardRow {
-            rank: glb_rank,
-            name: nm_tx,
-            raw_name: b.name.clone(),
-            key: b.key.clone(),
-            is_selected: is_sel,
-            net_pct: (nt * 100.0).round() / 100.0,
-            net_pct_str: format!("{:+0.2}%", nt),
-            dd_eq: (b.dd_eq * 100.0).round() / 100.0,
-            dd_eq_str: format!("{:.2}%", b.dd_eq),
-            dd_bal: (b.dd_bal * 100.0).round() / 100.0,
-            dd_bal_str: format!("{:.2}%", b.dd_bal),
-            win_pct: win_pct_str,
-            trades: n_trades,
-            pf: (pf_val * 100.0).round() / 100.0,
-            pf_str: format!("{:.2}", pf_val),
-            liq: if b.liquid { "YA".to_string() } else { "-".to_string() },
-            badge: b.category_badge().to_string(),
+            let new_top_symbols: HashSet<String> = self.resolve_active_symbols().await.into_iter().collect();
+            *self.last_top_symbols.write().await = new_top_symbols.clone();
+
+            let current_symbols: HashSet<String> = self.engines.read().await.keys().cloned().collect();
+            let active_pos_symbols: HashSet<String> = self.active_positions.read().await.keys().cloned().collect();
+
+            // Graceful Demotion: Koin yang dipertahankan = Top N baru + Posisi aktif saat ini
+            let needed_symbols: HashSet<String> = new_top_symbols.union(&active_pos_symbols).cloned().collect();
+
+            let to_remove: Vec<String> = current_symbols.difference(&needed_symbols).cloned().collect();
+            let to_add: Vec<String> = new_top_symbols.difference(&current_symbols).cloned().collect();
+
+            let mut changed = false;
+
+            for sym in to_remove {
+                self.log(&format!("[{}] Demoted dari screener (tidak ada posisi aktif). Melepas engine.", sym), "INFO").await;
+                self.pending_sniping_orders.write().await.remove(&sym);
+                self.engines.write().await.remove(&sym);
+                changed = true;
+            }
+
+            if !to_add.is_empty() {
+                let (timeframe, limit) = {
+                    let cfg = self.config.read().await;
+                    (cfg.timeframe.clone(), cfg.warmup_limit)
+                };
+
+                for sym in to_add {
+                    self.log(&format!("[{}] Masuk ranking screener ({}). Menginisialisasi engine & warmup...", sym, mode), "INFO").await;
+                    let cfg = self.config.read().await.clone();
+                    let eng = VolStepEngine::new(
+                        sym.clone(),
+                        cfg.line_mode,
+                        cfg.vol_type,
+                        cfg.lookback,
+                        cfg.vol_mult,
+                        cfg.stdev_bessel,
+                    );
+                    self.engines.write().await.insert(sym.clone(), eng);
+                    self.warmup_single_symbol(&sym, limit, &timeframe).await;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                self.log(
+                    &format!("🔄 Screener diperbarui ({}): {} koin aktif. Menyelaraskan WebSocket stream...", mode, self.engines.read().await.len()),
+                    "INFO",
+                ).await;
+                self.restart_websocket().await;
+            }
+        }
+    }
+
+    pub async fn run(self: Arc<Self>) {
+        self.is_running.store(true, Ordering::SeqCst);
+        self.init_engines().await;
+        self.warmup_all().await;
+
+        let b1 = self.clone();
+        let b2 = self.clone();
+        let b3 = self.clone();
+        let b4 = self.clone();
+        let b5 = self.clone();
+
+        tokio::select! {
+            _ = b1.websocket_worker() => {},
+            _ = b2.fapi_live_fallback_worker() => {},
+            _ = b3.exchange_sync_worker() => {},
+            _ = b4.order_timeout_cleaner() => {},
+            _ = b5.dynamic_screener_worker() => {},
+        }
+
+        self.is_running.store(false, Ordering::SeqCst);
+        *self.status.write().await = "STOPPED".to_string();
+        self.log("Bot dihentikan.", "INFO").await;
+    }
+
+    pub async fn start(self: Arc<Self>) {
+        if self.is_running.load(Ordering::SeqCst) {
+            return;
+        }
+        self.is_running.store(true, Ordering::SeqCst);
+        *self.status.write().await = "STARTING".to_string();
+        self.log("Memulai bot di background tokio runtime...", "INFO").await;
+
+        let this = self.clone();
+        tokio::spawn(async move {
+            this.run().await;
         });
     }
 
-    // Build 6 Category Winners comparison rows
-    let mut cat_winners: Vec<CategoryWinner> = Vec::with_capacity(6);
-
-    let create_cat_winner = |s: &Sim, r: usize, code: &str, lbl: &str, col: &str| {
-        let nt = s.net_pct(last_c, init_cap);
-        let n_trades = s.n_win + s.n_loss;
-        CategoryWinner {
-            category_code: code.to_string(),
-            label: lbl.to_string(),
-            name: s.name.clone(),
-            key: s.key.clone(),
-            rank: r,
-            net_pct: (nt * 100.0).round() / 100.0,
-            net_pct_str: format!("{:+0.2}%", nt),
-            dd_eq: (s.dd_eq * 100.0).round() / 100.0,
-            dd_eq_str: format!("{:.2}%", s.dd_eq),
-            dd_bal: (s.dd_bal * 100.0).round() / 100.0,
-            dd_bal_str: format!("{:.2}%", s.dd_bal),
-            win_pct: if n_trades > 0 {
-                format!("{:.1}%", (s.n_win as f64) * 100.0 / (n_trades as f64))
-            } else {
-                "-".to_string()
-            },
-            trades: n_trades,
-            pf: (s.pf() * 100.0).round() / 100.0,
-            pf_str: format!("{:.2}", s.pf()),
-            liq: if s.liquid { "YA".to_string() } else { "-".to_string() },
-            color_code: col.to_string(),
-        }
-    };
-
-    // 1. #1 ALL
-    cat_winners.push(create_cat_winner(
-        &best_overall_sim,
-        1,
-        "#1 ALL",
-        "[TERBAIK ALL]",
-        "gold",
-    ));
-
-    // 2. BAR2 (Base Bar Murni)
-    if let Some((s, r)) = &best_bar_both {
-        cat_winners.push(create_cat_winner(
-            s,
-            *r,
-            &format!("#{} BAR2", r),
-            "[BASE BAR TP+SL]",
-            "bar2",
-        ));
-    }
-
-    // 3. B-TP (Base Bar TP)
-    if let Some((s, r)) = &best_bar_tp {
-        cat_winners.push(create_cat_winner(
-            s,
-            *r,
-            &format!("#{} B-TP", r),
-            "[BASE BAR TP]",
-            "btp",
-        ));
-    }
-
-    // 4. B-SL (Base Bar SL)
-    if let Some((s, r)) = &best_bar_sl {
-        cat_winners.push(create_cat_winner(
-            s,
-            *r,
-            &format!("#{} B-SL", r),
-            "[BASE BAR SL]",
-            "bsl",
-        ));
-    }
-
-    // 5. FIX% (Base Persen Fixed)
-    if let Some((s, r)) = &best_fixed_pct {
-        cat_winners.push(create_cat_winner(
-            s,
-            *r,
-            &format!("#{} FIX%", r),
-            "[BASE PERSEN FIXED]",
-            "fix",
-        ));
-    }
-
-    // 6. MED% (Base Persen Median)
-    if let Some((s, r)) = &best_med_pct {
-        cat_winners.push(create_cat_winner(
-            s,
-            *r,
-            &format!("#{} MED%", r),
-            "[BASE PERSEN MEDIAN]",
-            "med",
-        ));
-    }
-
-    // Build Detail View
-    let bs = vis_sim.as_ref().unwrap_or(&best_overall_sim);
-    let disp_rnk = sel_rank.unwrap_or(1);
-
-    let (bf, _) = bs.scan_at(last_c);
-    let eq_now = if bs.liquid { 0.0 } else { bs.bal + bf };
-    let um = bs.used_m();
-    let net = eq_now - init_cap;
-    let net_p = (net / init_cap) * 100.0;
-    let n_tr = bs.n_win + bs.n_loss;
-
-    let hdr_prefix = if vis_sim.is_some() {
-        format!("DETAIL PILIHAN (Rank #{}): ", disp_rnk)
-    } else {
-        "DETAIL TOP #1 (Pilih Strategi = None): ".to_string()
-    };
-    let dt_header = format!("{}{}", hdr_prefix, bs.name);
-
-    let liq_time_str = bs
-        .liq_time
-        .map(|lt| {
-            DateTime::from_timestamp_millis(lt)
-                .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
-
-    let md_h_val = if med_h.is_nan() { 0.0 } else { med_h };
-    let md_l_val = if med_l.is_nan() { 0.0 } else { med_l };
-
-    let cat_desc = if bs.is_bar_both() {
-        "Base Bar Murni (TP+SL Bar)"
-    } else if bs.is_bar_tp() {
-        "Base Bar TP"
-    } else if bs.is_bar_sl() {
-        "Base Bar SL"
-    } else if bs.is_fixed_pct() {
-        "Base Persen Tetap"
-    } else if bs.is_median_pct() {
-        "Base Persen Median"
-    } else {
-        "NextSR Only"
-    };
-
-    let mode_desc = if bs.mode == 0 {
-        "Hedge Mode".to_string()
-    } else {
-        format!("One-Way ({})", one_way_rule)
-    };
-
-    let dt_rows = vec![
-        DetailRow {
-            key: "Peringkat Strategi".into(),
-            val: format!("#{} dari {} ({})", disp_rnk, sorted_sims.len(), rank_by),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Mode & Kategori".into(),
-            val: format!("{} | {}", mode_desc, cat_desc),
-            color: if bs.is_bar_both() {
-                "good".into()
-            } else if bs.is_bar_any() {
-                "highlight".into()
-            } else {
-                "neutral".into()
-            },
-        },
-        DetailRow {
-            key: "Saldo Awal / Akhir".into(),
-            val: format!("{:.2} / {:.2} USDT", init_cap, if bs.liquid { 0.0 } else { bs.bal }),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Equity (Floating)".into(),
-            val: format!("{:.2} USDT", eq_now),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Net Profit (Round-Trip)".into(),
-            val: format!("{:.2} ({:+0.2}%)", net, net_p),
-            color: if net >= 0.0 { "good".into() } else { "bad".into() },
-        },
-        DetailRow {
-            key: "Margin / Entry & Lev".into(),
-            val: format!(
-                "{:.1}% ({}) | {}x",
-                margin_pct,
-                if margin_basis == "Initial Balance" { "Awal" } else { "Saldo" },
-                leverage
-            ),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Fee Entry / Exit TP".into(),
-            val: format!("{:.3}% / {:.3}% (2 Arah)", fee_entry, fee_exit),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Median H / |L| (SR selesai)".into(),
-            val: format!("{:.3}% / {:.3}%", md_h_val, md_l_val),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Entry Long / Short".into(),
-            val: format!("{} / {}", bs.n_long, bs.n_short),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Exit TP Persen / Bar-TP".into(),
-            val: format!("{} / {}", bs.n_tp - bs.n_bar_tp, bs.n_bar_tp),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Exit SL Persen / Bar-SL / Trail / NextSR".into(),
-            val: format!(
-                "{} / {} / {} / {}",
-                bs.n_stop - bs.n_trail - bs.n_bar_sl,
-                bs.n_bar_sl,
-                bs.n_trail,
-                bs.n_next
-            ),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Win / Loss (Net Fee)".into(),
-            val: format!(
-                "{} / {}{}",
-                bs.n_win,
-                bs.n_loss,
-                if n_tr > 0 {
-                    format!(" ({:.1}%)", (bs.n_win as f64) * 100.0 / (n_tr as f64))
-                } else {
-                    "".to_string()
-                }
-            ),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Profit Factor (Net Fee)".into(),
-            val: format!("{:.2}", bs.pf()),
-            color: if bs.pf() >= 1.0 { "good".into() } else { "bad".into() },
-        },
-        DetailRow {
-            key: "Posisi Open".into(),
-            val: format!("{} ({:+0.2} USDT)", bs.book.len(), bf),
-            color: if bf >= 0.0 { "good".into() } else { "bad".into() },
-        },
-        DetailRow {
-            key: "Margin Terpakai".into(),
-            val: format!(
-                "{:.2} USDT{}",
-                um,
-                if eq_now > 0.0 {
-                    format!(" ({:.1}%)", um / eq_now * 100.0)
-                } else {
-                    "".to_string()
-                }
-            ),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Total Fee Dibayar".into(),
-            val: format!("{:.2} USDT", bs.fees),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Entry Dilewati (Skip)".into(),
-            val: format!("{}", bs.n_skip),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Max DD Equity / Balance".into(),
-            val: format!("{:.2}% / {:.2}%", bs.dd_eq, bs.dd_bal),
-            color: if bs.dd_eq > 0.0 { "bad".into() } else { "neutral".into() },
-        },
-        DetailRow {
-            key: "Likuidasi (Saldo Habis)".into(),
-            val: if bs.liquid {
-                format!("YA - {}", liq_time_str)
-            } else {
-                "TIDAK".into()
-            },
-            color: if bs.liquid { "bad".into() } else { "good".into() },
-        },
-        DetailRow {
-            key: "SR Selesai (Sampel)".into(),
-            val: format!("{}", hi_arr.len()),
-            color: "neutral".into(),
-        },
-        DetailRow {
-            key: "Terbaik Base Bar (TP+SL)".into(),
-            val: best_bar_both
-                .as_ref()
-                .map(|(s, r)| format!("#{} {}", r, s.key))
-                .unwrap_or_else(|| "-".into()),
-            color: "good".into(),
-        },
-        DetailRow {
-            key: "Terbaik Base Persen Fixed".into(),
-            val: best_fixed_pct
-                .as_ref()
-                .map(|(s, r)| format!("#{} {}", r, s.key))
-                .unwrap_or_else(|| "-".into()),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Kode Dropdown".into(),
-            val: bs.key.clone(),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Harga Close Terakhir".into(),
-            val: format!("{}", last_c),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Level SR Terakhir".into(),
-            val: format!("{}", *confirmed_sr.last().unwrap_or(&last_c)),
-            color: "highlight".into(),
-        },
-        DetailRow {
-            key: "Band Volatilitas Terakhir".into(),
-            val: format!("±{}", *vol_value.last().unwrap_or(&0.0)),
-            color: "neutral".into(),
-        },
-    ];
-
-    let mut open_positions = Vec::with_capacity(bs.book.len());
-    let last_sr_val = *confirmed_sr.last().unwrap_or(&last_c);
-    for p in &bs.book {
-        let e_time = DateTime::from_timestamp_millis(p.entry_time)
-            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-            .unwrap_or_default();
-        let fl_pct = (p.side as f64) * (last_c - p.entry) / p.entry * 100.0;
-        let est_fee_out = p.qty * last_c * fee_entry / 100.0;
-        let fl_net_usdt = (p.side as f64) * p.qty * (last_c - p.entry) - p.fee_in - est_fee_out;
-
-        open_positions.push(OpenPositionView {
-            side: if p.side == 1 { "BUY".into() } else { "SELL".into() },
-            entry_time: e_time,
-            entry_px: p.entry,
-            entry_px_str: format!("{}", p.entry),
-            current_close_px: last_c,
-            current_close_px_str: format!("{}", last_c),
-            current_sr_px: last_sr_val,
-            current_sr_px_str: format!("{}", last_sr_val),
-            qty: p.qty,
-            margin: (p.margin * 100.0).round() / 100.0,
-            fee_in: (p.fee_in * 1000.0).round() / 1000.0,
-            tp_px: p.tp.map(|v| format!("{}", v)).unwrap_or_else(|| "-".into()),
-            sl_px: p.sl.map(|v| format!("{}", v)).unwrap_or_else(|| "NextSR".into()),
-            tp_desc: p.tp_desc.clone(),
-            sl_desc: p.sl_desc.clone(),
-            float_pct: format!("{:+0.2}%", fl_pct),
-            float_usdt: format!("{:+0.2} USDT", fl_net_usdt),
-            pnl_color: if fl_net_usdt >= 0.0 { "good".into() } else { "bad".into() },
-        });
-    }
-
-    let mut recent_trades = bs.trades.clone();
-    recent_trades.reverse();
-
-    let dt_start = DateTime::from_timestamp_millis(times[0])
-        .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default();
-    let dt_end = DateTime::from_timestamp_millis(times[n - 1])
-        .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default();
-
-    BacktestResult {
-        leaderboard: LeaderboardSection {
-            title: format!(
-                "LEADERBOARD | Filter: {} ({}/{}) | Rank: {}",
-                strat_filter,
-                filt_sims.len(),
-                sims.len(),
-                rank_by
-            ),
-            headers: ld_headers,
-            rows: ld_rows,
-            category_winners: cat_winners,
-        },
-        detail: DetailSection {
-            title: dt_header,
-            rows: dt_rows,
-            recent_trades,
-            open_positions,
-        },
-        summary: SummarySection {
-            total_sims: sims.len(),
-            filtered_sims: filt_sims.len(),
-            candles_count: n,
-            start_date: dt_start,
-            end_date: dt_end,
-            last_price: last_c,
-            last_price_str: format!("{}", last_c),
-            last_sr: *confirmed_sr.last().unwrap_or(&last_c),
-            last_sr_str: format!("{}", *confirmed_sr.last().unwrap_or(&last_c)),
-            last_vol: *vol_value.last().unwrap_or(&0.0),
-            last_vol_str: format!("{}", *vol_value.last().unwrap_or(&0.0)),
-        },
+    pub async fn stop(&self) {
+        self.is_running.store(false, Ordering::SeqCst);
+        *self.status.write().await = "STOPPED".to_string();
+        self.log("Permintaan stop bot diterima.", "INFO").await;
+        self.ws_restart_notify.notify_waiters();
     }
 }

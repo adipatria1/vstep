@@ -27,6 +27,6 @@ class AppPreferences(context: Context) {
         private const val KEY_NOTIF_ENABLED = "key_notif_enabled"
 
         // Default URL: Standalone Localhost (Embedded Native Rust Engine)
-        const val DEFAULT_URL = "http://127.0.0.1:5050"
+        const val DEFAULT_URL = "http://127.0.0.1:5000"
     }
 }
