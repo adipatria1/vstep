@@ -1041,7 +1041,8 @@ impl BotManager {
         }
 
         let strat = self.get_effective_strategy(symbol).await;
-        let target_side = if strat.mode == "One-Way Trend" {
+        let is_trend = strat.mode.to_uppercase().contains("TREND");
+        let target_side = if is_trend {
             if signal_dir == "BULL" { "BUY" } else { "SELL" }
         } else {
             if signal_dir == "BULL" { "SELL" } else { "BUY" }
